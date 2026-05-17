@@ -1,60 +1,47 @@
 # Requirements
 
-## Core Requirements
+## 1. Overview
 
-- Systemet ska vara en terminalbaserad coding assistant.
-- Systemet ska kunna hjälpa användaren i ett lokalt kodprojekt.
-- Systemet ska på sikt kunna läsa filer i projektet.
-- Systemet ska på sikt kunna köra utvalda och säkra bash-kommandon.
-- Systemet ska kunna sammanfatta vad det har gjort och varför.
-- Systemet ska vara enkelt nog för ett kursprojekt, men strukturerat så att det kan byggas vidare.
+This document maps each required VG assignment feature to a concrete feature in Personal Dev Assistant and explains how it will be demonstrated.
 
-## Multi-Agent Requirements
+The goal is to keep the project focused and realistic for a course project while still showing the required AI-agent concepts clearly: multi-agent coordination, context handling, safe tool use, command execution, partial file editing, configuration, and a repeatable demo.
 
-- Systemet ska ha en main agent som styr arbetsflödet.
-- Main agent ska kunna avgöra när en sub-agent behövs.
-- Planner agent ska kunna bryta ner en uppgift i steg.
-- Explorer agent ska kunna undersöka filer och projektstruktur.
-- Coder agent ska kunna föreslå eller utföra små kodändringar.
-- Reviewer/Safety agent ska kunna granska risker, kommandon och ändringar.
+## 2. Requirements checklist
 
-## Context Engineering Requirements
+| Requirement | Project feature | How it will be demonstrated | Status |
+| --- | --- | --- | --- |
+| Multi-agent system: main agent can start sub-agents and use their results | A main agent coordinates the workflow and can call specialized sub-agents for planning, exploration, coding, and review/safety. | In the demo, the main agent asks an explorer-style sub-agent to inspect files, uses the result to decide the next step, and can ask a reviewer/safety step to check risky actions before continuing. | Planned |
+| Advanced context engineering: long tool outputs or sub-agent outputs are summarized before being added to active context | A context manager keeps active context short by summarizing long command output, file content, and sub-agent responses. | When tests or file inspections produce longer output, the assistant stores or forwards a short summary instead of adding the full raw output to the next prompt. | Planned |
+| Token/cost monitoring: real-time tracking, warnings and hard-cap | A token monitor tracks approximate token usage and cost during a session, warns near the configured budget, and stops execution at a hard cap. | The demo or a scripted run will show current budget usage, a warning threshold, and the behavior when a hard cap would be reached. | Planned |
+| Protection against harmful tool calls: safety checker for risky bash commands | A safety checker reviews bash commands before execution and blocks or asks for approval for risky operations. | Safe commands such as listing files and running tests are allowed, while destructive commands are rejected or require explicit confirmation. | Planned |
+| Bash command execution | A bash tool can run approved commands in the local project directory. | The assistant runs `pytest` in the demo project to reproduce and later verify the failing test. | Planned |
+| Partial file editing | A file editing tool can make small, focused changes instead of rewriting large files. | The assistant changes only the incorrect line in `demo_project/calculator.py` from subtraction to addition. | Planned |
+| Packaged/easy setup: Docker or clear setup instructions | The project will include clear setup instructions, and Docker may be added if it improves reproducibility. | A user can follow the setup guide to install dependencies, configure environment variables, and run the demo locally. | Planned |
+| Config file for configuration | Runtime options such as model name, token budget, approval settings, and max tool output length are configurable. | The demo can be run with a small config file or documented config values that control model and safety behavior. | Planned |
+| Secrets through environment variables | Secrets such as API keys are read from environment variables and documented in `.env.example`. | The setup instructions show how to set `OPENAI_API_KEY` or another provider key without committing secrets to the repository. | Partly present |
+| Baseline ASSN-2 behavior: the agent decides whether to continue with more tool calls or yield back to the user | The main agent loop decides after each step whether to call another tool/sub-agent or return a final answer to the user. | In the demo, the assistant continues from inspection to test execution to file edit to verification, then stops and summarizes when the task is complete. | Planned |
 
-- Systemet ska hålla aktiv context så kort och relevant som möjligt.
-- Långa tool outputs ska sammanfattas innan de skickas vidare.
-- Systemet ska kunna skilja på viktig projektinformation och tillfälligt brus.
-- Prompts ska vara separerade från kod så att de kan utvecklas stegvis.
-- Dokumentation ska beskriva viktiga designbeslut.
+## 3. Scope boundaries
 
-## Safety Requirements
+The first VG version will stay intentionally small.
 
-- Riskabla bash-kommandon ska fångas upp innan de körs.
-- Vissa kommandon ska kräva godkännande från användaren.
-- Destruktiva kommandon ska blockeras eller hanteras extra försiktigt.
-- Filändringar ska vara små och begripliga.
-- Systemet ska kunna förklara vilka verktyg det vill använda och varför.
+- It will not be a full Claude Code replacement.
+- It will not support every programming language deeply.
+- It will not automatically edit huge codebases.
+- It will not try to solve large refactors or complex architecture changes.
+- It will focus on a small, reliable demo first.
 
-## Token/Cost Requirements
+## 4. Demo proof
 
-- Systemet ska ha en konfigurerbar tokenbudget.
-- Systemet ska varna när budgeten börjar ta slut.
-- Systemet ska ha en hard cap för att stoppa för dyra körningar.
-- Tool outputs ska begränsas med en maxlängd.
-- Token- och kostnadsinformation ska vara synlig för användaren på enkel nivå.
+The demo will use a small Python project with a failing test. The project is intentionally simple so the assistant can show the complete workflow without unnecessary complexity.
 
-## Packaging/Config Requirements
+The assistant should:
 
-- Konfiguration ska kunna ligga i miljövariabler.
-- `.env.example` ska visa vilka variabler som behövs.
-- Projektet ska senare kunna få en tydlig installationsguide.
-- Docker kan användas senare för enklare setup.
-- Projektstrukturen ska vara tydlig och lätt att förstå.
+1. Inspect the demo project files.
+2. Run the tests and observe the failing result.
+3. Identify that `add(a, b)` returns the wrong value.
+4. Make a partial file edit in `demo_project/calculator.py`.
+5. Run the tests again.
+6. Summarize what it changed, why it changed it, and whether the verification passed.
 
-## Demo Requirements
-
-- Demon ska använda ett litet lokalt Python-projekt.
-- Demo-projektet ska innehålla ett failing test.
-- Agenten ska undersöka projektet och hitta orsaken till felet.
-- Agenten ska göra eller föreslå en liten ändring.
-- Agenten ska köra tester igen.
-- Agenten ska sammanfatta sina steg, resultat och eventuella begränsningar.
+This demo proves the core behavior required for the VG assignment: controlled tool use, local project inspection, bash execution, partial editing, context summarization, and a clear final explanation to the user.
