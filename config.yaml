@@ -1,0 +1,18 @@
+model: "gpt-4o-mini"
+
+token_budget:
+  max_tokens: 50000
+  warning_threshold: 0.8
+  hard_cap_enabled: true
+
+safety:
+  require_confirmation_for_risky_commands: true
+  allow_file_edits: true
+
+context:
+  max_observation_chars: 4000
+  max_subagent_summary_chars: 1500
+
+tools:
+  command_timeout_seconds: 30
+  test_command: "pytest"

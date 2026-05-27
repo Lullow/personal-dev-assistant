@@ -21,4 +21,4 @@ Projektet är under utveckling. I den här fasen finns bara repo-struktur, dokum
 
 Den tänkta demon är att agenten får arbeta i ett litet Python-projekt med ett failing test. Agenten ska undersöka projektet, hitta buggen, föreslå eller göra en liten ändring, köra tester igen och sammanfatta vad som hände.
 
-Demo-projektet finns inte ännu. Det ska skapas senare när grunden för agenten är tydligare.
+Ett första litet demo-projekt finns i `demo_project/`. Det innehåller en avsiktligt felaktig calculator-funktion och ett test som används för den planerade demon.

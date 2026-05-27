@@ -6,7 +6,7 @@ Den tänkta demon ska visa hur Personal Dev Assistant kan hjälpa till i ett lit
 
 Agenten får ett litet Python-projekt med ett failing test. Projektet ska vara enkelt nog att förstå snabbt, men tillräckligt realistiskt för att visa hur agenten arbetar stegvis.
 
-Demo-projektet ska inte skapas ännu. Det här dokumentet beskriver bara planen.
+Ett första demo-projekt finns i `demo_project/`. Det här dokumentet beskriver hur det ska användas när agentimplementationen finns på plats.
 
 ## Tänkt arbetsflöde
 
