@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "personal-dev-assistant"
+version = "0.1.0"
+description = "A small terminal-based AI coding assistant for a VG assignment demo."
+requires-python = ">=3.12"
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+]
+
+[project.scripts]
+personal-dev-assistant = "personal_dev_assistant.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
