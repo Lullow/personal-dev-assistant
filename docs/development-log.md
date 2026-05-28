@@ -94,6 +94,29 @@ YYYY-MM-DD
 
 - Bash execution och partial file editing är inte implementerade än.
 
+### 2026-05-28 - Context/output compaction
+
+#### Vad som implementerades
+
+- Lade till deterministic output compaction utan LLM-sammanfattning.
+- Lång output bevarar början och slutet av texten.
+- Lade till truncation marker och size metadata för original och compacted output.
+- Lade till `compact_tool_observation` helper för ToolResult-style observations.
+
+#### VG-krav som stöds
+
+- Context engineering: undvika att raw tool output fyller aktiv context.
+
+#### Tester
+
+- Lade till tester för kort output, lång output, truncation marker, bevarad början/slut och config-styrd maxstorlek.
+- Kördes: `./.venv/bin/python -m pytest tests`
+- Resultat: 87 passed.
+
+#### Begränsning / nästa steg
+
+- Bash execution är inte implementerat än.
+
 ### YYYY-MM-DD
 
 ### Vad jag gjorde
