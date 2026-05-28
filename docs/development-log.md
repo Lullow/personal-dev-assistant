@@ -72,6 +72,28 @@ YYYY-MM-DD
 
 - Safety-lagret klassificerar bara kommandon och paths än så länge; det är ännu inte kopplat till ett bash-tool.
 
+### 2026-05-28 - Read-only filesystem tools
+
+#### Vad som implementerades
+
+- Lade till `read_file` tool för säker läsning av textfiler.
+- Lade till `list_project_files` tool för kompakt projektlistning utan att läsa filinnehåll.
+- Båda tools använder safety checks innan paths används.
+- `read_file` stödjer truncation via `config.context.max_observation_chars`.
+
+#### VG-krav som stöds
+
+- Safe tool usage, file inspection och grund för context/output limiting.
+
+#### Tester
+
+- Kördes: `./.venv/bin/python -m pytest tests`
+- Resultat: 81 passed.
+
+#### Begränsning / nästa steg
+
+- Bash execution och partial file editing är inte implementerade än.
+
 ### YYYY-MM-DD
 
 ### Vad jag gjorde
