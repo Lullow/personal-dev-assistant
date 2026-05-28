@@ -26,6 +26,52 @@ YYYY-MM-DD
 
 ## Loggar
 
+### 2026-05-28 - Foundation package and config models
+
+#### Vad som implementerades
+
+- Skapade Python package structure under `src/personal_dev_assistant/`.
+- Lade till config/env loading från `config.yaml` och environment variables.
+- Lade till shared data models: `ToolCall`, `ToolResult`, `AgentResult` och `TokenUsage`.
+- Lade till minimal CLI som tar emot en user task och skriver en placeholder response.
+
+#### VG-krav som stöds
+
+- Config file för runtime-inställningar.
+- Secrets via environment variables.
+- Grundstruktur för agent protocol, tool results och token/cost monitoring.
+
+#### Tester
+
+- Kördes: `./.venv/bin/python -m pytest tests`
+- Resultat: 10 passed.
+
+#### Begränsning / nästa steg
+
+- CLI är fortfarande en placeholder; agent loop, tools, LLM calls och sub-agents är inte implementerade än.
+
+### 2026-05-28 - Safety policy layer
+
+#### Vad som implementerades
+
+- Lade till command classification för `safe`, `risky_requires_confirmation` och `blocked`.
+- Blockerar destruktiva kommandon och markerar riskabla kommandon som kräver bekräftelse.
+- Lade till blocked path checks för `.env`, `.git/`, `.venv/`, caches, `dist/` och `build/`.
+- Uppdaterade safety checker så att shell chaining/control blockeras: `&&`, `||`, `;`, `|`, backticks och `$(`.
+
+#### VG-krav som stöds
+
+- Skydd mot skadliga tool calls, särskilt riskabla bash-kommandon och blockerade paths innan faktisk tool-exekvering implementeras.
+
+#### Tester
+
+- Kördes: `./.venv/bin/python -m pytest tests`
+- Resultat: 74 passed.
+
+#### Begränsning / nästa steg
+
+- Safety-lagret klassificerar bara kommandon och paths än så länge; det är ännu inte kopplat till ett bash-tool.
+
 ### YYYY-MM-DD
 
 ### Vad jag gjorde
