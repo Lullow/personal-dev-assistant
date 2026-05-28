@@ -58,6 +58,24 @@ def test_shell_control_operators_are_blocked(command):
 @pytest.mark.parametrize(
     "command",
     [
+        "ls /",
+        "ls ..",
+        "ls ../other_project",
+        "ls folder/../../other",
+        "pytest ../other_project",
+        "python -m pytest ../other_project",
+    ],
+)
+def test_path_arguments_that_escape_project_root_are_blocked(command):
+    result = classify_command(command)
+
+    assert result.decision is SafetyDecision.BLOCKED
+    assert result.is_allowed is False
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
         "pip install requests",
         "python -m pip install pytest",
         "npm install",

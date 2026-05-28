@@ -76,6 +76,13 @@ def classify_command(command: str) -> SafetyResult:
             f"Command targets blocked path `{blocked_path}`.",
         )
 
+    escaping_path = _first_project_escape_path_token(tokens)
+    if escaping_path is not None:
+        return SafetyResult(
+            SafetyDecision.BLOCKED,
+            f"Command path argument escapes project root: `{escaping_path}`.",
+        )
+
     if _contains_shell_to_script_pipe(command):
         return SafetyResult(
             SafetyDecision.BLOCKED,
@@ -236,6 +243,18 @@ def _first_blocked_path_token(tokens: list[str]) -> str | None:
             continue
         result = check_path_safety(token)
         if result.decision is SafetyDecision.BLOCKED:
+            return token
+    return None
+
+
+def _first_project_escape_path_token(tokens: list[str]) -> str | None:
+    for token in tokens[1:]:
+        if token in {">", ">>", "2>", "2>>", "|", "&&", "||", ";"}:
+            continue
+        if token.startswith("-"):
+            continue
+        path = PurePosixPath(token.replace("\\", "/"))
+        if path.is_absolute() or ".." in path.parts:
             return token
     return None
 
