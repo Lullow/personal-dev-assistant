@@ -160,6 +160,31 @@ YYYY-MM-DD
 
 - LLM client och agent loop är inte implementerade än.
 
+### 2026-05-28 - LLM client layer
+
+#### Vad som implementerades
+
+- Lade till LLM client-abstraktion med budget-medveten `complete()`.
+- Lade till `MockChatClient` för tester och dry-run-läge.
+- Lade till OpenAI-kompatibel client utan hårdkodade secrets.
+- `LLMResponse` innehåller text, `TokenUsage`, model och mock-flagga.
+- Varje lyckat anrop uppdaterar `TokenBudgetMonitor`.
+- Hard cap stoppar ytterligare anrop innan modellen anropas.
+
+#### VG-krav som stöds
+
+- Token/cost monitoring-integration och grund för LLM-anrop i main agent och sub-agents.
+
+#### Tester
+
+- Kördes: `./.venv/bin/python -m pytest tests`
+- Resultat: 130 passed.
+
+#### Begränsning / nästa steg
+
+- Main agent loop och sub-agent orchestration är inte implementerade än.
+- OpenRouter/base_url-konfiguration kan förbättras senare vid behov.
+
 ### YYYY-MM-DD
 
 ### Vad jag gjorde
