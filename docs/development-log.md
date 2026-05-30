@@ -117,6 +117,28 @@ YYYY-MM-DD
 
 - Bash execution är inte implementerat än.
 
+### 2026-05-28 - Partial file edit tool
+
+#### Vad som implementerades
+
+- Lade till `partial_edit` tool för små, exakta textändringar i tillåtna projektfiler.
+- Använder safety checks innan redigering och håller paths inom `project_root`.
+- Kräver att `old_text` matchar exakt en gång.
+- Avvisar blockerade paths, paths utanför project root, no-op edits, duplicerade matchningar, saknad `old_text` och icke-UTF-8-filer.
+
+#### VG-krav som stöds
+
+- Partial file editing och skydd mot skadliga filändringar.
+
+#### Tester
+
+- Kördes: `./.venv/bin/python -m pytest tests`
+- Resultat: 116 passed.
+
+#### Begränsning / nästa steg
+
+- Token budget monitoring och LLM/client-lager är inte implementerade än.
+
 ### YYYY-MM-DD
 
 ### Vad jag gjorde
