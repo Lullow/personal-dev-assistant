@@ -185,6 +185,29 @@ YYYY-MM-DD
 - Main agent loop och sub-agent orchestration är inte implementerade än.
 - OpenRouter/base_url-konfiguration kan förbättras senare vid behov.
 
+### 2026-05-28 - Main agent loop
+
+#### Vad som implementerades
+
+- Lade till första `MainAgent`-loopen med ACTION-baserad protocol parsing.
+- Stödjer `read_file`, `list_project_files`, `bash`, `partial_edit` och `finish`.
+- Håller step count och stoppar vid `max_steps`.
+- Stoppar säkert vid token budget hard-cap.
+- Kompakterar tool observations innan de läggs till i context.
+
+#### VG-krav som stöds
+
+- Baseline agent-beteende där agenten väljer om den ska fortsätta med tool-calls eller yield tillbaka till användaren.
+
+#### Tester
+
+- Kördes: `./.venv/bin/python -m pytest tests`
+- Resultat: 138 passed.
+
+#### Begränsning / nästa steg
+
+- Sub-agent orchestration är inte implementerad än.
+
 ### YYYY-MM-DD
 
 ### Vad jag gjorde
