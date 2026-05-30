@@ -48,8 +48,14 @@ def _make_agent(
     max_steps: int = 10,
     budget_monitor: TokenBudgetMonitor | None = None,
     max_observation_chars: int = 4000,
+    max_subagent_summary_chars: int = 1500,
 ) -> MainAgent:
-    app_config = AppConfig(context=ContextConfig(max_observation_chars=max_observation_chars))
+    app_config = AppConfig(
+        context=ContextConfig(
+            max_observation_chars=max_observation_chars,
+            max_subagent_summary_chars=max_subagent_summary_chars,
+        )
+    )
     runtime = RuntimeConfig(app=app_config, environment=EnvironmentConfig())
     monitor = budget_monitor or TokenBudgetMonitor(app_config)
     client = ScriptedChatClient(
@@ -203,3 +209,64 @@ def test_tool_observations_are_included_compactly_not_as_unbounded_raw_output(tm
     observation = result.observations[0]
     assert len(observation) <= 120 + len("read_file: ")
     assert "[truncated" in observation
+
+
+def test_main_agent_can_parse_subagents_action_with_multiple_roles(tmp_path):
+    agent = _make_agent(
+        tmp_path,
+        [
+            "ACTION: subagents\nROLES: planner, explorer",
+            "ROLE: planner\nSUMMARY: Plan the fix\nFINDING: inspect demo files\nRISK_LEVEL: low\nNEXT_STEP: explore",
+            "ROLE: explorer\nSUMMARY: Found subtraction bug\nFINDING: add returns a - b\nRISK_LEVEL: low\nNEXT_STEP: edit",
+            "ACTION: finish\nFINAL: Sub-agents coordinated.",
+        ],
+    )
+
+    result = agent.run("Fix the demo test")
+
+    assert result.stopped_reason == "finish"
+    assert any("planner" in observation for observation in result.observations)
+    assert any("explorer" in observation for observation in result.observations)
+    assert any("subtraction bug" in observation for observation in result.observations)
+
+
+def test_main_agent_adds_compact_subagent_results_to_observations(tmp_path):
+    long_summary = "SUMMARY-" + ("x" * 300) + "-END"
+    agent = _make_agent(
+        tmp_path,
+        [
+            "ACTION: subagents\nROLES: planner",
+            f"ROLE: planner\nSUMMARY: {long_summary}\nRISK_LEVEL: low",
+            "ACTION: finish\nFINAL: Done.",
+        ],
+        max_subagent_summary_chars=80,
+    )
+
+    result = agent.run("Long sub-agent summary")
+
+    assert result.observations
+    assert "[truncated" in result.observations[0]
+
+
+def test_token_budget_monitor_is_updated_through_chat_client_during_subagents(tmp_path):
+    app_config = AppConfig()
+    monitor = TokenBudgetMonitor(app_config)
+    client = ScriptedChatClient(
+        model=app_config.model,
+        budget_monitor=monitor,
+        responses=[
+            "ACTION: subagents\nROLES: planner",
+            "ROLE: planner\nSUMMARY: Short plan\nRISK_LEVEL: low",
+            "ACTION: finish\nFINAL: Done.",
+        ],
+    )
+    agent = MainAgent(
+        runtime_config=RuntimeConfig(app=app_config, environment=EnvironmentConfig()),
+        chat_client=client,
+        project_root=tmp_path,
+        budget_monitor=monitor,
+    )
+
+    agent.run("Track budget")
+
+    assert monitor.status().total_tokens_used > 0

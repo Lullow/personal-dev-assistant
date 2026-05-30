@@ -6,6 +6,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from personal_dev_assistant.agents.protocol import AgentAction, parse_agent_action
+from personal_dev_assistant.agents.subagents import (
+    SubAgentRunner,
+    compact_agent_result,
+    parse_roles_param,
+)
 from personal_dev_assistant.budget import TokenBudgetMonitor
 from personal_dev_assistant.config import AppConfig, RuntimeConfig
 from personal_dev_assistant.context import compact_output
@@ -31,6 +36,9 @@ PATH: relative/path
 OLD_TEXT: exact text
 NEW_TEXT: replacement text
 REASON: why
+
+ACTION: subagents
+ROLES: planner, explorer, coder, reviewer
 
 ACTION: finish
 FINAL: concise final response to the user
@@ -106,6 +114,12 @@ class MainAgent:
                 messages = self._build_messages(task, observations)
                 continue
 
+            if action.name == "subagents":
+                observation = self._run_subagents(action, task, observations)
+                observations.append(observation)
+                messages = self._build_messages(task, observations)
+                continue
+
             tool_result = self._execute_action(action)
             observation = _compact_tool_observation(action.name, tool_result, self._app_config)
             observations.append(observation)
@@ -177,6 +191,25 @@ class MainAgent:
         if not path.exists():
             return ""
         return path.read_text(encoding="utf-8").strip()
+
+    def _run_subagents(
+        self,
+        action: AgentAction,
+        task: str,
+        observations: list[str],
+    ) -> str:
+        roles = parse_roles_param(action.params.get("roles", ""))
+        runner = SubAgentRunner(
+            chat_client=self._chat_client,
+            app_config=self._app_config,
+            prompts_root=self._prompts_root,
+            task=task,
+            observations=observations,
+        )
+        results = runner.run_roles(roles)
+        compact_parts = [compact_agent_result(result, self._app_config) for result in results]
+        combined = "\n".join(compact_parts) if compact_parts else "subagents: no roles requested"
+        return _compact_observation("subagents", combined, config=self._app_config)
 
 
 def _compact_tool_observation(
