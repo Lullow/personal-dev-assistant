@@ -208,6 +208,31 @@ YYYY-MM-DD
 
 - Sub-agent orchestration är inte implementerad än.
 
+### 2026-05-30 - Sub-agent orchestration
+
+#### Vad som implementerades
+
+- Lade till `SubAgentRunner` under `src/personal_dev_assistant/agents/`.
+- Stödjer sub-agent-roller: `planner`, `explorer`, `coder` och `reviewer`.
+- Varje sub-agent laddar sin egen promptfil från `prompts/` (t.ex. `planner_agent.md`).
+- Sub-agents anropar befintlig `ChatClient` och returnerar strukturerade `AgentResult`-objekt via ett enkelt response-protokoll (`ROLE`, `SUMMARY`, `FINDING`, `RISK_LEVEL`, `NEXT_STEP`).
+- `MainAgent` stödjer `ACTION: subagents` med `ROLES:` för flera roller i samma steg.
+- Sub-agent-resultat kompakteras innan de läggs till i main agents observations.
+- Okända roller avvisas tydligt utan LLM-anrop.
+
+#### VG-krav som stöds
+
+- Main agent kan starta sub-agents och använda deras resultat i loopen.
+
+#### Tester
+
+- Kördes: `./.venv/bin/python -m pytest tests`
+- Resultat: 146 passed.
+
+#### Begränsning / nästa steg
+
+- Sub-agents körs sekventiellt; riktig parallell körning kan bli en framtida förbättring.
+
 ### YYYY-MM-DD
 
 ### Vad jag gjorde
