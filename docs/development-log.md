@@ -233,6 +233,31 @@ YYYY-MM-DD
 
 - Sub-agents körs sekventiellt; riktig parallell körning kan bli en framtida förbättring.
 
+### 2026-05-30 - Deterministic demo runner
+
+#### Vad som implementerades
+
+- Lade till end-to-end demo runner under `src/personal_dev_assistant/demo/`.
+- Demon använder befintliga safe tools: `list_project_files`, `read_file`, `bash` och `partial_edit`.
+- Kör tester före och efter fix via `bash` (`pytest demo_project`).
+- Applicerar avsedd one-line-fix i `demo_project/calculator.py` (`return a - b` → `return a + b`).
+- Deterministiskt flöde utan LLM; kräver ingen riktig API-nyckel.
+- Repeterbart: kan återställa initial bug-state eller rapportera att ingen edit behövs om projektet redan är fixat.
+- CLI-entrypoint: `python -m personal_dev_assistant.demo.runner` och `personal-dev-assistant-demo`.
+
+#### VG-krav som stöds
+
+- Live/demo-bevis för bash-exekvering, partial file editing, safety och tool workflow i `demo_project/`.
+
+#### Tester
+
+- Kördes: `./.venv/bin/python -m pytest tests`
+- Resultat: 153 passed.
+
+#### Begränsning / nästa steg
+
+- README, setup/demo-instruktioner och packaging behöver fortfarande poleras.
+
 ### YYYY-MM-DD
 
 ### Vad jag gjorde
