@@ -139,6 +139,27 @@ YYYY-MM-DD
 
 - Token budget monitoring och LLM/client-lager är inte implementerade än.
 
+### 2026-05-28 - Token budget monitor
+
+#### Vad som implementerades
+
+- Lade till `TokenBudgetMonitor` för session-baserad token- och kostnadsspårning.
+- Spårar input tokens, output tokens, total tokens, återstående budget, warning threshold, hard cap och uppskattad kostnad.
+- Använder `TokenUsage` från `models.py` och läser budgetinställningar från `AppConfig.token_budget`.
+
+#### VG-krav som stöds
+
+- Real-time token/cost monitoring, budget warnings och hard-cap-beteende.
+
+#### Tester
+
+- Kördes: `./.venv/bin/python -m pytest tests`
+- Resultat: 123 passed.
+
+#### Begränsning / nästa steg
+
+- LLM client och agent loop är inte implementerade än.
+
 ### YYYY-MM-DD
 
 ### Vad jag gjorde
