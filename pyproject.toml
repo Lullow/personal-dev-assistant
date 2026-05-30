@@ -15,6 +15,7 @@ dev = [
 
 [project.scripts]
 personal-dev-assistant = "personal_dev_assistant.cli:main"
+personal-dev-assistant-demo = "personal_dev_assistant.demo.runner:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
