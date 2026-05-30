@@ -32,7 +32,7 @@ The included demo project (`demo_project/`) contains an intentional bug in `calc
 | Sub-agent orchestration (`planner`, `explorer`, `coder`, `reviewer`) | Implemented (sequential) |
 | Deterministic demo runner | Implemented |
 | Interactive CLI wired to full agent loop | **Placeholder only** |
-| Docker packaging | **Not yet** |
+| Docker packaging | Implemented |
 
 **153 tests** currently pass.
 
@@ -51,7 +51,7 @@ For implementation history, see [`docs/development-log.md`](docs/development-log
 | Config file | Non-secret runtime settings in `config.yaml` | Implemented |
 | Secrets via environment variables | API keys and overrides come from env vars (see `.env.example`) | Implemented |
 | Baseline agent loop (continue vs yield) | Main agent continues with tools/sub-agents or finishes with a final response | Implemented |
-| Packaged/easy setup | Local venv + README setup; Docker not added yet | Partly present |
+| Packaged/easy setup | Local venv + README + Docker | Implemented |
 | Live demo proof | Deterministic demo runner on `demo_project/` | Implemented |
 
 More detail: [`docs/requirements.md`](docs/requirements.md), [`docs/demo-plan.md`](docs/demo-plan.md), [`docs/technical-spec.md`](docs/technical-spec.md).
@@ -111,6 +111,78 @@ set +a
 ```
 
 The deterministic demo does **not** need `OPENAI_API_KEY`. Real LLM usage is kept separate through environment variables so secrets never belong in `config.yaml`.
+
+## Docker setup
+
+Docker provides a reproducible way to run tests and the deterministic demo without setting up a local virtual environment. **No API key is required** for the demo image default command.
+
+### Build the image
+
+From the project root:
+
+```bash
+docker build -t personal-dev-assistant .
+```
+
+Or with Compose:
+
+```bash
+docker compose build
+```
+
+Secrets are **not** baked into the image. Do not copy `.env` into the Dockerfile.
+
+### Run tests in Docker
+
+```bash
+docker run --rm personal-dev-assistant pytest tests
+```
+
+Or:
+
+```bash
+docker compose run --rm test
+```
+
+Expected result: **153 passed**.
+
+### Run the deterministic demo in Docker
+
+```bash
+docker run --rm personal-dev-assistant
+```
+
+Or:
+
+```bash
+docker compose run --rm demo
+```
+
+The default container command runs `personal-dev-assistant-demo` against `/app`. No `OPENAI_API_KEY` is needed.
+
+To re-run with restore (default demo behavior inside the container):
+
+```bash
+docker compose run --rm demo
+```
+
+Each container run starts from the image copy of `demo_project/`. The demo restores the intentional bug when needed, then applies the fix again.
+
+### Optional environment variables in Docker
+
+For future LLM-backed runs, pass secrets at **runtime** only:
+
+```bash
+docker run --rm --env-file .env personal-dev-assistant personal-dev-assistant "Your task"
+```
+
+Or with Compose:
+
+```bash
+docker compose run --rm --env-file .env demo
+```
+
+Only create `.env` locally from [`.env.example`](.env.example). Never commit real API keys.
 
 ## Configuration
 
@@ -212,6 +284,8 @@ Then run the demo again normally.
 personal-dev-assistant/
 ├── config.yaml              # Non-secret runtime settings
 ├── .env.example             # Secret/env override template
+├── Dockerfile               # Container image for tests and demo
+├── docker-compose.yml       # Convenience commands for test/demo
 ├── demo_project/            # Small Python demo with intentional bug
 ├── docs/                    # Requirements, specs, demo plan, dev log
 ├── prompts/                 # Agent prompt files
@@ -233,15 +307,14 @@ Be honest about scope — this is a course-sized assistant, not production tooli
 - **Not a full Claude Code replacement.** It targets a small, demo-friendly workflow.
 - **CLI is still a placeholder** for LLM-backed interactive use; the deterministic demo is the polished presentation path today.
 - **Sub-agents run sequentially**, not in parallel.
-- **No Docker image yet.** Setup is local venv + documented commands.
 - **Demo is scripted**, not LLM-driven. The main agent loop exists in code/tests but is not the default user-facing CLI yet.
 - **Small project scope.** It is meant for `demo_project/`-scale tasks, not large refactors.
 
 ## Suggested VG presentation flow
 
 1. Show the repo structure and `docs/requirements.md`.
-2. Run `pytest tests` to show automated coverage.
-3. Run `python -m personal_dev_assistant.demo.runner` to show:
+2. Run `pytest tests` (locally or with `docker compose run --rm test`).
+3. Run `python -m personal_dev_assistant.demo.runner` or `docker compose run --rm demo` to show:
    - safe bash execution
    - partial file editing
    - before/after test verification

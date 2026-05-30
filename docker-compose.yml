@@ -1,0 +1,10 @@
+services:
+  demo:
+    build: .
+    command: ["personal-dev-assistant-demo", "--project-root", "/app"]
+    working_dir: /app
+
+  test:
+    build: .
+    command: ["pytest", "tests"]
+    working_dir: /app
