@@ -258,6 +258,39 @@ YYYY-MM-DD
 
 - README, setup/demo-instruktioner och packaging behöver fortfarande poleras.
 
+### 2026-05-30 - Docker packaging
+
+#### Vad som implementerades
+
+- Lade till `Dockerfile` för att köra projektet i container.
+- Lade till `.dockerignore` så secrets, venv och cache-filer inte kopieras in i imagen.
+- Lade till `docker-compose.yml` med `test`- och `demo`-services.
+- Docker-imagen kan köra testsuite och deterministisk demo.
+- Deterministisk demo kräver ingen API-nyckel; secrets skickas endast som valfri runtime-input via `.env`.
+- Uppdaterade `README.md` med Docker build/run-instruktioner.
+
+#### Verifiering
+
+- `docker build -t personal-dev-assistant .`
+- `docker run --rm personal-dev-assistant pytest tests`
+- `docker run --rm personal-dev-assistant`
+- `docker compose build`
+- `docker compose run --rm test`
+- `docker compose run --rm demo`
+
+#### VG-krav som stöds
+
+- Packaged/easy setup så en annan person kan bygga och köra projektet reproducerbart.
+
+#### Tester
+
+- Kördes i Docker: `docker run --rm personal-dev-assistant pytest tests`
+- Resultat: 153 passed.
+
+#### Begränsning / nästa steg
+
+- Final demo script/rehearsal behövs fortfarande.
+
 ### YYYY-MM-DD
 
 ### Vad jag gjorde
