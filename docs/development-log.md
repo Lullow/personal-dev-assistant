@@ -291,6 +291,38 @@ YYYY-MM-DD
 
 - Final demo script/rehearsal behövs fortfarande.
 
+### 2026-05-30 - Presentation-friendly demo output
+
+#### Vad som implementerades
+
+- Förbättrade deterministisk demo-terminaloutput för live-presentation.
+- Lade till numrerade steg och `[OK]` / `[FAIL]` / `[STEP]`-markörer.
+- Lade till before/after test status i outputen.
+- Lade till mini diff för one-line-fixen (`return a - b` → `return a + b`).
+- Lade till VG feature checklist i demo-outputen.
+- Lade till `--plain` för original enkel output.
+- Uppdaterade `README.md` och `docs/demo-script.md`.
+
+#### VG-krav / presentationsnytta
+
+- Klasskamrater kan lättare förstå workflow steg för steg.
+- Gabriel kan tydligt se vilka VG-features som demonstreras i demon.
+
+#### Verifiering
+
+- Docker-imagen byggdes om och deterministisk demo verifierades med ny visual output.
+- `docker build -t personal-dev-assistant .`
+- `docker run --rm personal-dev-assistant`
+
+#### Tester
+
+- Kördes: `./.venv/bin/python -m pytest tests`
+- Resultat: 157 passed.
+
+#### Begränsning / nästa steg
+
+- Interaktivt terminal-läge för assistanten är inte implementerat än.
+
 ### YYYY-MM-DD
 
 ### Vad jag gjorde
