@@ -378,6 +378,34 @@ YYYY-MM-DD
 
 - Låt LLM föreslå edits säkert, lägg till reviewer/sub-agent-godkännande innan `partial_edit` aktiveras.
 
+### 2026-05-30 - Experimental proposed edit mode
+
+#### Vad som implementerades
+
+- Lade till `ACTION: propose_edit` i experimentellt LLM-läge (`run-agent --llm`).
+- Föreslagna edits valideras men appliceras **inte** som standard; filer på disk ändras inte utan explicit flagga.
+- Lade till CLI-flaggan `--apply-proposed-edits` för att applicera validerade förslag.
+- Applicering går endast via befintliga `partial_edit`-verktyget — ingen bypass av safety-lagret.
+- Validering använder samma regler som `partial_edit`: blockerade paths, paths inom project root, UTF-8-textfiler, icke-tom `old_text`, exakt-en gång-matchning, avvisning av duplicerade matchningar, no-op edits och binary/icke-UTF-8-filer.
+- Observations inkluderar mini diff och apply hint när ett förslag är giltigt.
+- `partial_edit` förblir blockerad som direkt LLM-action i experimentellt läge.
+- Subagents förblir inaktiverade i experimentellt LLM-läge.
+- Lade till `tests/test_propose_edit.py` och utökade `tests/test_run_agent.py`.
+- Uppdaterade `README.md` och `docs/safety-policy.md`.
+
+#### Produkt- och säkerhetsnytta
+
+- Säker väg mot LLM-driven kodredigering utan att ge modellen obegränsad skrivåtkomst.
+
+#### Tester
+
+- Kördes: `./.venv/bin/python -m pytest tests`
+- Resultat: 192 passed.
+
+#### Begränsning / nästa steg
+
+- Lägg till reviewer/sub-agent-godkännande innan föreslagna edits appliceras automatiskt, eller inför JSON-schema-liknande response-format för mer robust parsing.
+
 ### YYYY-MM-DD
 
 ### Vad jag gjorde
