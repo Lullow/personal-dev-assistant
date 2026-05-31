@@ -2,7 +2,7 @@
 
 Use this script during the VG presentation. It is honest about scope: this is a **school-sized** terminal assistant, not a full Claude Code replacement.
 
-**Recommended path:** run the **deterministic demo** (no API key, no network, repeatable). Main-agent and sub-agent behavior exists in code and is covered by **153 tests**, but the interactive CLI is still a placeholder.
+**Recommended path:** run the **deterministic demo** (no API key, no network, repeatable). For a hands-on feel, use **`personal-dev-assistant chat`**. Real `MainAgent` + `SubAgentRunner` architecture exists in code and tests; interactive mode is an MVP without free-form LLM chat.
 
 Estimated time: **8–12 minutes**.
 
@@ -224,12 +224,32 @@ Exit code **0** = success.
 
 ---
 
+## 8b. Optional interactive terminal mode
+
+```bash
+personal-dev-assistant chat
+```
+
+Suggested flow:
+
+```text
+> read demo_project/calculator.py
+> test
+> fix
+> tokens
+> quit
+```
+
+Say clearly: **deterministic command-driven MVP**, not free-form LLM chat. The `fix` command shows MAIN AGENT → PLANNER → EXPLORER → CODER → REVIEWER → PARTIAL_EDIT → BASH with real safe tools.
+
+---
+
 ## 9. Strengths
 
 - **Clear scope** — small, understandable demo project.
 - **Safety first** — commands and paths checked before tools run.
 - **Honest architecture** — main agent, sub-agents, tools, context, budget are separate layers.
-- **Tested** — 153 automated tests including safety, tools, agents, sub-agents.
+- **Tested** — 170 automated tests including safety, tools, agents, sub-agents, and interactive mode.
 - **Repeatable** — deterministic demo; Docker for another machine; no API key for demo.
 - **Documentation** — requirements, architecture, safety, dev log, README.
 
@@ -238,8 +258,8 @@ Exit code **0** = success.
 ## 10. Weaknesses / limitations (say these proactively)
 
 - **Not a production Claude Code replacement** — limited to small, local workflows.
-- **Deterministic demo is scripted** — safest for presentation; not a free-form LLM session.
-- **Interactive CLI is a placeholder** — full agent loop is in library code + tests, not default CLI yet.
+- **Deterministic demo and chat are scripted** — safest for presentation; not free-form LLM sessions.
+- **Interactive chat is an MVP** — real `MainAgent`/`SubAgentRunner` with LLM exist in library code + tests.
 - **Sub-agents are sequential** — no parallel execution.
 - **Small demo only** — one intentional bug, one-line fix; not large refactors.
 - **LLM demo needs API key + network** — separated via env vars; not required for VG live demo.

@@ -31,10 +31,11 @@ The included demo project (`demo_project/`) contains an intentional bug in `calc
 | Main agent loop (`MainAgent`) | Implemented |
 | Sub-agent orchestration (`planner`, `explorer`, `coder`, `reviewer`) | Implemented (sequential) |
 | Deterministic demo runner | Implemented |
-| Interactive CLI wired to full agent loop | **Placeholder only** |
+| Interactive terminal mode (`chat`) | Implemented (deterministic MVP, no API key) |
+| LLM-backed free-form chat | **Not implemented** |
 | Docker packaging | Implemented |
 
-**153 tests** currently pass.
+**170 tests** currently pass.
 
 For implementation history, see [`docs/development-log.md`](docs/development-log.md).
 
@@ -281,6 +282,47 @@ Then run the demo again normally.
 
 **If the demo was already run:** the file may currently contain `return a + b`. Running the demo again with default settings restores the bug and re-runs the fix automatically.
 
+## Interactive terminal mode
+
+Start a deterministic command-driven assistant session. This is **not** a free-form LLM chat — no API key required.
+
+```bash
+personal-dev-assistant chat
+# or
+personal-dev-assistant interactive
+# or
+python -m personal_dev_assistant.cli chat
+```
+
+On start:
+
+```text
+Personal Dev Assistant
+Deterministic interactive mode — not a free-form LLM session. No API key required.
+Ready when you are.
+```
+
+| Command | Action |
+| --- | --- |
+| `help` | Show available commands |
+| `exit` / `quit` | Leave interactive mode |
+| `list` | List project files safely |
+| `read <path>` | Read a file (tracks last read path) |
+| `review` | Review demo_project or last read file |
+| `test` | Run `pytest demo_project` via safe bash tool |
+| `fix` | Scripted MAIN AGENT → PLANNER → EXPLORER → CODER → REVIEWER → PARTIAL_EDIT → BASH |
+| `tokens` | Show token budget status |
+
+Example:
+
+```text
+> read demo_project/calculator.py
+> test
+> fix
+> tokens
+> quit
+```
+
 ## Project layout
 
 ```text
@@ -308,9 +350,9 @@ personal-dev-assistant/
 Be honest about scope — this is a course-sized assistant, not production tooling.
 
 - **Not a full Claude Code replacement.** It targets a small, demo-friendly workflow.
-- **CLI is still a placeholder** for LLM-backed interactive use; the deterministic demo is the polished presentation path today.
+- **Interactive mode is deterministic** — scripted commands and agent-style labels, not free-form LLM chat.
 - **Sub-agents run sequentially**, not in parallel.
-- **Demo is scripted**, not LLM-driven. The main agent loop exists in code/tests but is not the default user-facing CLI yet.
+- **Demo and chat are scripted paths** for presentation; `MainAgent` + `SubAgentRunner` with real LLM calls exist in library code and tests.
 - **Small project scope.** It is meant for `demo_project/`-scale tasks, not large refactors.
 
 ## Suggested VG presentation flow
