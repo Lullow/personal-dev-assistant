@@ -323,6 +323,32 @@ YYYY-MM-DD
 
 - Interaktivt terminal-läge för assistanten är inte implementerat än.
 
+### 2026-05-30 - Interactive terminal assistant mode
+
+#### Vad som implementerades
+
+- Lade till `personal-dev-assistant chat` och `interactive` (alias) i CLI.
+- Visar welcome-meddelande och `Ready when you are.` vid start.
+- Stödjer kommandon: `help`, `list`, `read`, `review`, `test`, `fix`, `tokens`, `exit`/`quit`.
+- Använder befintliga safe tools: `read_file`, `list_project_files`, `bash`, `partial_edit`.
+- `fix`-kommandot visar agent-style flow med MAIN AGENT, PLANNER, EXPLORER, CODER och REVIEWER.
+- `tokens`-kommandot visar token budget via `TokenBudgetMonitor`.
+- Deterministisk MVP utan API-nyckel; inte free-form LLM-chat.
+- Uppdaterade `README.md` och `docs/demo-script.md`.
+
+#### VG-krav / presentationsnytta
+
+- Projektet känns mer som en användbar assistant och är lättare för klasskamrater att förstå.
+
+#### Tester
+
+- Kördes: `./.venv/bin/python -m pytest tests`
+- Resultat: 170 passed.
+
+#### Begränsning / nästa steg
+
+- Free-form LLM-läge och stöd för bredare buggar kan bli framtida förbättringar.
+
 ### YYYY-MM-DD
 
 ### Vad jag gjorde
