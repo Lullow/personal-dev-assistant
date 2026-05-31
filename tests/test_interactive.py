@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pytest
 from io import StringIO
 from pathlib import Path
 
@@ -65,6 +66,105 @@ def test_parse_command_read_with_path():
 def test_parse_command_empty_line_returns_none():
     assert parse_command("") is None
     assert parse_command("   ") is None
+
+
+@pytest.mark.parametrize(
+    ("line", "expected"),
+    [
+        ("list files", ParsedCommand(name="list")),
+        ("show files", ParsedCommand(name="list")),
+        ("show project files", ParsedCommand(name="list")),
+        ("review it", ParsedCommand(name="review")),
+        ("review file", ParsedCommand(name="review")),
+        ("check it", ParsedCommand(name="review")),
+        ("test it", ParsedCommand(name="test")),
+        ("run tests", ParsedCommand(name="test")),
+        ("run pytest", ParsedCommand(name="test")),
+        ("fix bug", ParsedCommand(name="fix")),
+        ("fix the bug", ParsedCommand(name="fix")),
+        ("repair it", ParsedCommand(name="fix")),
+        ("show tokens", ParsedCommand(name="tokens")),
+        ("show token usage", ParsedCommand(name="tokens")),
+        ("token usage", ParsedCommand(name="tokens")),
+        ("budget", ParsedCommand(name="tokens")),
+        ("cost", ParsedCommand(name="tokens")),
+    ],
+)
+def test_parse_command_natural_phrases(line, expected):
+    assert parse_command(line) == expected
+
+
+@pytest.mark.parametrize(
+    ("line", "path"),
+    [
+        ("open demo_project/calculator.py", "demo_project/calculator.py"),
+        ("show demo_project/calculator.py", "demo_project/calculator.py"),
+        ("cat demo_project/calculator.py", "demo_project/calculator.py"),
+        ("inspect demo_project/calculator.py", "demo_project/calculator.py"),
+        ("  Open   demo_project/calculator.py  ", "demo_project/calculator.py"),
+    ],
+)
+def test_parse_command_natural_read_aliases(line, path):
+    assert parse_command(line) == ParsedCommand(name="read", arg=path)
+
+
+def test_parse_command_show_files_maps_to_list_not_read():
+    assert parse_command("show files") == ParsedCommand(name="list")
+    assert parse_command("show project files") == ParsedCommand(name="list")
+
+
+def test_parse_command_show_tokens_maps_to_tokens_not_read():
+    assert parse_command("show tokens") == ParsedCommand(name="tokens")
+    assert parse_command("show token usage") == ParsedCommand(name="tokens")
+
+
+@pytest.mark.parametrize(
+    ("line", "expected"),
+    [
+        ("can you review it", ParsedCommand(name="review")),
+        ("could you review it", ParsedCommand(name="review")),
+        ("please run tests", ParsedCommand(name="test")),
+        ("Please Can You review it", ParsedCommand(name="review")),
+    ],
+)
+def test_parse_command_polite_prefixes(line, expected):
+    assert parse_command(line) == expected
+
+
+def test_parse_command_unknown_command_still_parsed():
+    assert parse_command("foobar") == ParsedCommand(name="foobar")
+
+
+def test_handle_unknown_command_suggests_help(tmp_path):
+    output = StringIO()
+    assistant = _assistant(tmp_path, output=output)
+    assert assistant.handle(ParsedCommand(name="foobar")) is True
+    assert "Unknown command" in output.getvalue()
+    assert "help" in output.getvalue()
+
+
+def test_handle_natural_read_open_path(tmp_path):
+    _write_demo_project(tmp_path, calculator_source=BUGGY_CALCULATOR)
+    assistant = _assistant(tmp_path)
+
+    parsed = parse_command("open demo_project/calculator.py")
+    assert assistant.handle(parsed) is True
+    assert assistant.last_read_path == CALCULATOR_PATH
+
+
+def test_handle_natural_list_phrase(tmp_path):
+    _write_demo_project(tmp_path, calculator_source=BUGGY_CALCULATOR)
+    output = StringIO()
+    assistant = _assistant(tmp_path, output=output)
+
+    assert assistant.handle(parse_command("show files")) is True
+    assert "[OK] LIST" in output.getvalue()
+
+
+def test_help_text_mentions_natural_commands():
+    assert "Natural phrases also work" in HELP_TEXT
+    assert "open <path>" in HELP_TEXT
+    assert "run tests" in HELP_TEXT
 
 
 def test_welcome_messages():

@@ -36,7 +36,7 @@ The included demo project (`demo_project/`) contains an intentional bug in `calc
 | LLM-backed free-form chat | **Not implemented** |
 | Docker packaging | Implemented |
 
-**192 tests** currently pass.
+**220 tests** currently pass.
 
 For implementation history, see [`docs/development-log.md`](docs/development-log.md).
 
@@ -314,13 +314,16 @@ Ready when you are.
 | `fix` | Scripted MAIN AGENT → PLANNER → EXPLORER → CODER → REVIEWER → PARTIAL_EDIT → BASH |
 | `tokens` | Show token budget status |
 
+Natural phrases are also accepted (deterministic parsing, not LLM), for example:
+`show files`, `open demo_project/calculator.py`, `run tests`, `fix the bug`, `budget`.
+
 Example:
 
 ```text
-> read demo_project/calculator.py
-> test
-> fix
-> tokens
+> open demo_project/calculator.py
+> run tests
+> fix the bug
+> budget
 > quit
 ```
 

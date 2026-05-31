@@ -39,7 +39,55 @@ Commands:
   test              Run pytest on demo_project through the safe bash tool
   fix               Run the scripted multi-agent fix workflow on demo_project
   tokens            Show token budget status for this session
+
+Natural phrases also work (deterministic parsing, not LLM):
+  can you / could you / please ... (polite prefixes are stripped)
+  list files, show files, show project files
+  open <path>, show <path>, cat <path>, inspect <path>
+  review it, review file, check it
+  test it, run tests, run pytest
+  fix bug, fix the bug, repair it
+  show tokens, show token usage, token usage, budget, cost
 """.strip()
+
+# Longest prefixes first so "please can you" wins over "please".
+_POLITE_PREFIXES: tuple[str, ...] = (
+    "please can you",
+    "can you",
+    "could you",
+    "please",
+)
+
+# Longest phrases first so "show project files" wins over "show files".
+_MULTI_WORD_ALIASES: tuple[tuple[str, str], ...] = (
+    ("show project files", "list"),
+    ("show token usage", "tokens"),
+    ("list files", "list"),
+    ("show files", "list"),
+    ("token usage", "tokens"),
+    ("show tokens", "tokens"),
+    ("run pytest", "test"),
+    ("run tests", "test"),
+    ("fix the bug", "fix"),
+    ("fix bug", "fix"),
+    ("review file", "review"),
+    ("review it", "review"),
+    ("repair it", "fix"),
+    ("check it", "review"),
+    ("test it", "test"),
+)
+
+_SINGLE_WORD_ALIASES: dict[str, str] = {
+    "budget": "tokens",
+    "cost": "tokens",
+}
+
+_READ_PREFIXES: frozenset[str] = frozenset({"read", "open", "show", "cat", "inspect"})
+
+# Paths that must not be treated as file reads when using a read-style verb.
+_READ_PATH_BLOCKLIST: frozenset[str] = frozenset(
+    {"files", "project files", "tokens", "token usage"}
+)
 
 
 @dataclass(frozen=True)
@@ -288,17 +336,44 @@ class InteractiveAssistant:
         self.output_fn(text)
 
 
+def _strip_polite_prefix(text: str) -> str:
+    """Remove common polite prefixes before intent matching."""
+
+    stripped = text.strip()
+    lower = stripped.lower()
+    for prefix in _POLITE_PREFIXES:
+        if lower.startswith(prefix):
+            remainder = stripped[len(prefix) :].strip()
+            if remainder:
+                return remainder
+    return stripped
+
+
 def parse_command(line: str) -> ParsedCommand | None:
-    """Parse one interactive command line."""
+    """Parse one interactive command line with deterministic natural-language aliases."""
 
     stripped = line.strip()
     if not stripped:
         return None
 
-    parts = stripped.split(maxsplit=1)
-    name = parts[0].lower()
+    normalized = _strip_polite_prefix(stripped)
+    lower = normalized.lower()
+
+    for phrase, command in _MULTI_WORD_ALIASES:
+        if lower == phrase:
+            return ParsedCommand(name=command)
+
+    if lower in _SINGLE_WORD_ALIASES:
+        return ParsedCommand(name=_SINGLE_WORD_ALIASES[lower])
+
+    parts = normalized.split(maxsplit=1)
+    verb = parts[0].lower()
     arg = parts[1].strip() if len(parts) > 1 else None
-    return ParsedCommand(name=name, arg=arg)
+
+    if verb in _READ_PREFIXES and arg is not None and arg.lower() not in _READ_PATH_BLOCKLIST:
+        return ParsedCommand(name="read", arg=arg)
+
+    return ParsedCommand(name=verb, arg=arg)
 
 
 def run_interactive(

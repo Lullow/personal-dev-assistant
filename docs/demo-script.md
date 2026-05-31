@@ -230,17 +230,17 @@ Exit code **0** = success.
 personal-dev-assistant chat
 ```
 
-Suggested flow:
+Suggested flow (canonical or natural phrases both work):
 
 ```text
-> read demo_project/calculator.py
-> test
-> fix
-> tokens
+> open demo_project/calculator.py
+> run tests
+> fix the bug
+> budget
 > quit
 ```
 
-Say clearly: **deterministic command-driven MVP**, not free-form LLM chat. The `fix` command shows MAIN AGENT → PLANNER → EXPLORER → CODER → REVIEWER → PARTIAL_EDIT → BASH with real safe tools.
+Say clearly: **deterministic command-driven MVP**, not free-form LLM chat. Natural phrases like `show files`, `run pytest`, and `repair it` are mapped to the same safe commands — no LLM parsing. The `fix` command shows MAIN AGENT → PLANNER → EXPLORER → CODER → REVIEWER → PARTIAL_EDIT → BASH with real safe tools.
 
 ---
 
