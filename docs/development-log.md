@@ -406,6 +406,32 @@ YYYY-MM-DD
 
 - Lägg till reviewer/sub-agent-godkännande innan föreslagna edits appliceras automatiskt, eller inför JSON-schema-liknande response-format för mer robust parsing.
 
+### 2026-05-30 - Natural interactive command parsing
+
+#### Vad som implementerades
+
+- Förbättrade deterministisk command parser i `personal-dev-assistant chat` / `interactive`.
+- Lade till natural/synonym inputs, t.ex. `show files`, `open <path>`, `can you review it`, `run tests`, `fix the bug`, `show token usage`.
+- Befintliga fasta kommandon (`help`, `list`, `read <path>`, `review`, `test`, `fix`, `tokens`, `exit`/`quit`) fungerar oförändrat.
+- Parsern strippar artiga prefix som `can you`, `could you`, `please` och `please can you` innan intent-matchning.
+- Token/budget-intents prioriteras före file-display-intents som `show <path>` (t.ex. `show token usage` → `tokens`, inte `read`).
+- Ingen LLM-parsing tillagd; fortfarande deterministisk och säker.
+- Utökade tester i `tests/test_interactive.py`.
+- Uppdaterade `README.md` och `docs/demo-script.md`.
+
+#### Presentationsnytta
+
+- Interaktivt läge känns mer naturligt och är lättare för klasskamrater att förstå utan att memorera exakta kommandon.
+
+#### Tester
+
+- Kördes: `./.venv/bin/python -m pytest tests`
+- Resultat: 225 passed.
+
+#### Begränsning / nästa steg
+
+- Free-form LLM-chat är fortfarande experimentell och separat från deterministiskt interaktivt läge (`run-agent --llm`).
+
 ### YYYY-MM-DD
 
 ### Vad jag gjorde
