@@ -2,7 +2,7 @@
 
 Use this script during the VG presentation. It is honest about scope: this is a **school-sized** terminal assistant, not a full Claude Code replacement.
 
-**Recommended path:** run the **deterministic demo** (no API key, no network, repeatable). For a hands-on feel, use **`personal-dev-assistant chat`**. Real `MainAgent` + `SubAgentRunner` architecture exists in code and tests; interactive mode is an MVP without free-form LLM chat.
+**Recommended path:** run the **deterministic demo** (no API key) or **`personal-dev-assistant chat`**. Optional: **`run-agent --llm`** for experimental live LLM use with API key — not the primary demo route.
 
 Estimated time: **8–12 minutes**.
 
@@ -249,7 +249,7 @@ Say clearly: **deterministic command-driven MVP**, not free-form LLM chat. The `
 - **Clear scope** — small, understandable demo project.
 - **Safety first** — commands and paths checked before tools run.
 - **Honest architecture** — main agent, sub-agents, tools, context, budget are separate layers.
-- **Tested** — 170 automated tests including safety, tools, agents, sub-agents, and interactive mode.
+- **Tested** — 180 automated tests including safety, tools, agents, sub-agents, interactive mode, and experimental run-agent.
 - **Repeatable** — deterministic demo; Docker for another machine; no API key for demo.
 - **Documentation** — requirements, architecture, safety, dev log, README.
 
@@ -259,7 +259,7 @@ Say clearly: **deterministic command-driven MVP**, not free-form LLM chat. The `
 
 - **Not a production Claude Code replacement** — limited to small, local workflows.
 - **Deterministic demo and chat are scripted** — safest for presentation; not free-form LLM sessions.
-- **Interactive chat is an MVP** — real `MainAgent`/`SubAgentRunner` with LLM exist in library code + tests.
+- **Experimental LLM mode is optional** — requires API key; restricted to read/list/bash/finish; not for primary demo.
 - **Sub-agents are sequential** — no parallel execution.
 - **Small demo only** — one intentional bug, one-line fix; not large refactors.
 - **LLM demo needs API key + network** — separated via env vars; not required for VG live demo.

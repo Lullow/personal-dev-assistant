@@ -20,6 +20,10 @@ from personal_dev_assistant.tools import bash, list_project_files, partial_edit,
 
 DEFAULT_MAX_STEPS = 10
 
+EXPERIMENTAL_ALLOWED_ACTIONS = frozenset(
+    {"read_file", "list_project_files", "bash", "finish"}
+)
+
 _ACTION_PROTOCOL = """
 Respond using this exact protocol:
 
@@ -39,6 +43,29 @@ REASON: why
 
 ACTION: subagents
 ROLES: planner, explorer, coder, reviewer
+
+ACTION: finish
+FINAL: concise final response to the user
+""".strip()
+
+EXPERIMENTAL_ACTION_PROTOCOL = """
+Respond using this exact protocol.
+
+Experimental LLM mode allows ONLY these actions:
+- read_file
+- list_project_files
+- bash
+- finish
+
+Do NOT use partial_edit or subagents in experimental mode.
+
+ACTION: read_file
+PATH: relative/path
+
+ACTION: list_project_files
+
+ACTION: bash
+COMMAND: safe command here
 
 ACTION: finish
 FINAL: concise final response to the user
@@ -67,6 +94,9 @@ class MainAgent:
         budget_monitor: TokenBudgetMonitor | None = None,
         max_steps: int = DEFAULT_MAX_STEPS,
         prompts_root: str | Path | None = None,
+        allowed_actions: frozenset[str] | None = None,
+        stop_on_invalid_action: bool = False,
+        action_protocol: str | None = None,
     ) -> None:
         self._runtime_config = runtime_config
         self._app_config = runtime_config.app
@@ -75,6 +105,9 @@ class MainAgent:
         self._budget_monitor = budget_monitor or TokenBudgetMonitor(runtime_config.app)
         self._max_steps = max_steps
         self._prompts_root = Path(prompts_root or self._project_root)
+        self._allowed_actions = allowed_actions
+        self._stop_on_invalid_action = stop_on_invalid_action
+        self._action_protocol = action_protocol or _ACTION_PROTOCOL
 
     def run(self, task: str) -> MainAgentResult:
         """Run the main loop until finish, max steps, or budget refusal."""
@@ -105,6 +138,15 @@ class MainAgent:
                 )
 
             if action.name == "unknown":
+                if self._stop_on_invalid_action:
+                    return MainAgentResult(
+                        final_response=(
+                            "Stopped safely: could not parse a valid ACTION from the model response."
+                        ),
+                        steps=steps,
+                        stopped_reason="invalid_action",
+                        observations=observations,
+                    )
                 observation = _compact_observation(
                     "agent",
                     f"Could not parse action from model response: {llm_response.text}",
@@ -113,6 +155,16 @@ class MainAgent:
                 observations.append(observation)
                 messages = self._build_messages(task, observations)
                 continue
+
+            if self._allowed_actions is not None and action.name not in self._allowed_actions:
+                return MainAgentResult(
+                    final_response=(
+                        f"Stopped safely: action `{action.name}` is not allowed in this mode."
+                    ),
+                    steps=steps,
+                    stopped_reason="blocked_action",
+                    observations=observations,
+                )
 
             if action.name == "subagents":
                 observation = self._run_subagents(action, task, observations)
@@ -172,7 +224,7 @@ class MainAgent:
         system_parts = [
             self._load_prompt("system_prompt.md"),
             self._load_prompt("main_agent.md"),
-            _ACTION_PROTOCOL,
+            self._action_protocol,
         ]
         system_prompt = "\n\n".join(part for part in system_parts if part)
 

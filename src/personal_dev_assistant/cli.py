@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import argparse
+import sys
 from pathlib import Path
 
 from personal_dev_assistant.config import load_app_config, load_runtime_config
 from personal_dev_assistant.interactive import run_interactive
+from personal_dev_assistant.llm.client import MissingApiKeyError
+from personal_dev_assistant.run_agent import format_experimental_output, run_experimental_llm_agent
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -47,6 +50,30 @@ def build_parser() -> argparse.ArgumentParser:
         help="Project root for safe tool operations.",
     )
 
+    run_agent_parser = subparsers.add_parser(
+        "run-agent",
+        help="Experimental LLM-driven agent mode (requires --llm and OPENAI_API_KEY).",
+    )
+    run_agent_parser.add_argument(
+        "task",
+        help="Task for the experimental LLM agent.",
+    )
+    run_agent_parser.add_argument(
+        "--llm",
+        action="store_true",
+        help="Enable experimental live LLM mode.",
+    )
+    run_agent_parser.add_argument(
+        "--config",
+        default="config.yaml",
+        help="Path to the non-secret YAML config file.",
+    )
+    run_agent_parser.add_argument(
+        "--project-root",
+        default=".",
+        help="Project root for safe tool operations.",
+    )
+
     run_parser = subparsers.add_parser(
         "run",
         help="Legacy single-task placeholder (non-interactive).",
@@ -71,6 +98,27 @@ def main(argv: list[str] | None = None) -> int:
             project_root=args.project_root,
             app_config=app_config,
         )
+
+    if args.mode == "run-agent":
+        if not args.llm:
+            print(
+                "Experimental LLM mode requires --llm.\n"
+                "Example: personal-dev-assistant run-agent \"Inspect demo_project\" --llm",
+                file=sys.stderr,
+            )
+            return 2
+        runtime_config = load_runtime_config(Path(args.config))
+        try:
+            result = run_experimental_llm_agent(
+                args.task,
+                runtime_config=runtime_config,
+                project_root=args.project_root,
+            )
+        except MissingApiKeyError as error:
+            print(str(error), file=sys.stderr)
+            return 2
+        print(format_experimental_output(result))
+        return 0 if result.agent_result.stopped_reason == "finish" else 1
 
     if args.mode == "run":
         runtime_config = load_runtime_config(Path(args.config))

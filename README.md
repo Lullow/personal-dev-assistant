@@ -32,10 +32,11 @@ The included demo project (`demo_project/`) contains an intentional bug in `calc
 | Sub-agent orchestration (`planner`, `explorer`, `coder`, `reviewer`) | Implemented (sequential) |
 | Deterministic demo runner | Implemented |
 | Interactive terminal mode (`chat`) | Implemented (deterministic MVP, no API key) |
+| Experimental LLM agent mode (`run-agent --llm`) | Implemented (optional, restricted, requires API key) |
 | LLM-backed free-form chat | **Not implemented** |
 | Docker packaging | Implemented |
 
-**170 tests** currently pass.
+**180 tests** currently pass.
 
 For implementation history, see [`docs/development-log.md`](docs/development-log.md).
 
@@ -323,6 +324,33 @@ Example:
 > quit
 ```
 
+## Experimental LLM agent mode (optional)
+
+This is **not** the primary demo path. Use the deterministic demo or `chat` mode for presentations without an API key.
+
+Requires `OPENAI_API_KEY` in the environment:
+
+```bash
+export OPENAI_API_KEY=your-key-here
+personal-dev-assistant run-agent "Inspect demo_project and run pytest" --llm
+```
+
+What it does:
+
+- Uses the real `MainAgent` loop and OpenAI-compatible `ChatClient`
+- Respects max steps, token hard cap, safety checks, and existing tools
+- Allows only: `read_file`, `list_project_files`, `bash`, `finish`
+- **Does not allow** LLM-driven `partial_edit` or `subagents` in this step
+- Stops safely if the model returns an invalid action format or a disallowed action
+- Does not auto-execute risky commands (they are blocked by the safety layer)
+
+Example output starts with:
+
+```text
+*** EXPERIMENTAL LLM AGENT MODE ***
+Optional live LLM path — not the primary demo route.
+```
+
 ## Project layout
 
 ```text
@@ -352,7 +380,8 @@ Be honest about scope — this is a course-sized assistant, not production tooli
 - **Not a full Claude Code replacement.** It targets a small, demo-friendly workflow.
 - **Interactive mode is deterministic** — scripted commands and agent-style labels, not free-form LLM chat.
 - **Sub-agents run sequentially**, not in parallel.
-- **Demo and chat are scripted paths** for presentation; `MainAgent` + `SubAgentRunner` with real LLM calls exist in library code and tests.
+- **Experimental LLM mode is restricted** — read/list/bash/finish only; no LLM-driven edits yet.
+- **Demo and chat remain the primary presentation paths** without an API key.
 - **Small project scope.** It is meant for `demo_project/`-scale tasks, not large refactors.
 
 ## Suggested VG presentation flow
