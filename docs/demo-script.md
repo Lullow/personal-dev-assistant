@@ -175,24 +175,49 @@ While the demo runs, narrate each step:
 
 ## 8. Expected demo output summary
 
+Default output is **presentation-friendly** (numbered steps, markers, mini diff, VG checklist). Use `--plain` for the original simple format.
+
 You should see output similar to:
+
+```text
+==============================================================================
+           Personal Dev Assistant — Deterministic Live Demo
+==============================================================================
+
+[STEP] Goal: find and fix the failing test in demo_project/
+[STEP] Uses safe tools only — no API key required.
+
+1. [STEP] List project files
+   Inspect the project structure without reading every file's full content.
+   [OK] Listed ...
+
+...
+
+Test status
+   Before fix: [FAIL] tests failed
+   After fix:  [OK] tests passed
+
+One-line fix applied
+- return a - b
++ return a + b
+
+VG feature checklist shown in this demo
+   [x] Safe bash execution (pytest + compileall)
+   ...
+
+==============================================================================
+                                Demo SUCCESS
+==============================================================================
+```
+
+Plain output (`--plain`):
 
 ```text
 Personal Dev Assistant demo completed.
 Before fix: tests failed.
-Applied partial edit to demo_project/calculator.py: return a - b -> return a + b.
-Edit summary: Updated `demo_project/calculator.py` with a single focused replacement. ...
-After fix: tests passed.
-Workflow used list_project_files, read_file, bash, partial_edit, and compileall.
-
+...
 Steps:
 - list_project_files: ok — ...
-- read_test_file: ok — ...
-- read_calculator_file: ok — ...
-- run_tests_before: failed — Command exited with code 1: pytest demo_project
-- apply_fix: ok — ...
-- refresh_bytecode_after_fix: ok — ...
-- run_tests_after: ok — Command exited with code 0: pytest demo_project
 ```
 
 Exit code **0** = success.

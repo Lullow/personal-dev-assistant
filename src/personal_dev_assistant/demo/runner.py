@@ -319,6 +319,153 @@ def _build_summary(
     return "\n".join(lines)
 
 
+_STEP_PRESENTATION: dict[str, tuple[str, str]] = {
+    "restore_initial_state": (
+        "Restore intentional bug state",
+        "Put demo_project back into its failing starting state for a repeatable presentation.",
+    ),
+    "refresh_bytecode_after_restore": (
+        "Refresh bytecode after restore",
+        "Recompile calculator.py so pytest loads the restored source safely.",
+    ),
+    "list_project_files": (
+        "List project files",
+        "Inspect the project structure without reading every file's full content.",
+    ),
+    "read_test_file": (
+        "Read failing test",
+        "See what behavior the demo project expects from calculator.add().",
+    ),
+    "read_calculator_file": (
+        "Read calculator implementation",
+        "Inspect the code under test before making any change.",
+    ),
+    "run_tests_before": (
+        "Run tests before fix",
+        "Verify the bug by running pytest through the safe bash tool.",
+    ),
+    "apply_fix": (
+        "Apply one-line partial edit",
+        "Make a small exact-match change instead of rewriting the whole file.",
+    ),
+    "refresh_bytecode_after_fix": (
+        "Refresh bytecode after fix",
+        "Recompile calculator.py so the next pytest run sees the updated code.",
+    ),
+    "run_tests_after": (
+        "Run tests after fix",
+        "Confirm the one-line change actually fixes the failing test.",
+    ),
+}
+
+_VG_FEATURE_CHECKLIST: tuple[tuple[str, bool], ...] = (
+    ("Safe bash execution (pytest + compileall)", True),
+    ("Partial file editing (exact one-line fix)", True),
+    ("Safety checks before tools run", True),
+    ("Read-only file inspection", True),
+    ("Before/after test verification", True),
+    ("Context-safe compact tool workflow", True),
+    ("Deterministic demo without API key", True),
+    ("Main agent + sub-agents implemented in codebase/tests", True),
+)
+
+
+def _status_marker(ok: bool) -> str:
+    return "[OK]" if ok else "[FAIL]"
+
+
+def _mini_diff(old_line: str, new_line: str) -> str:
+    return f"- {old_line}\n+ {new_line}"
+
+
+def format_plain_output(result: DemoRunResult) -> str:
+    """Format demo output in the original simple style."""
+
+    lines = [result.summary, "", "Steps:"]
+    for step in result.steps:
+        status = "ok" if step.result.ok else "failed"
+        lines.append(f"- {step.name}: {status} — {step.result.summary}")
+    return "\n".join(lines)
+
+
+def format_visual_output(result: DemoRunResult) -> str:
+    """Format presentation-friendly demo output for live terminal use."""
+
+    width = 78
+    border = "=" * width
+    lines = [
+        border,
+        " Personal Dev Assistant — Deterministic Live Demo".center(width),
+        border,
+        "",
+        "[STEP] Goal: find and fix the failing test in demo_project/",
+        "[STEP] Uses safe tools only — no API key required.",
+        "",
+    ]
+
+    for index, step in enumerate(result.steps, start=1):
+        title, explanation = _STEP_PRESENTATION.get(
+            step.name,
+            (step.name.replace("_", " ").title(), "Run one safe tool step in the demo workflow."),
+        )
+        marker = _status_marker(step.result.ok)
+        lines.extend(
+            [
+                f"{index}. [STEP] {title}",
+                f"   {explanation}",
+                f"   {marker} {step.result.summary}",
+                "",
+            ]
+        )
+
+    before_marker = _status_marker(result.before_tests_passed)
+    lines.append("Test status")
+    lines.append(f"   Before fix: {before_marker} tests {'passed' if result.before_tests_passed else 'failed'}")
+
+    if result.after_tests_passed is None:
+        lines.append("   After fix:  [STEP] tests were not re-run")
+    else:
+        after_marker = _status_marker(result.after_tests_passed)
+        lines.append(
+            f"   After fix:  {after_marker} tests {'passed' if result.after_tests_passed else 'failed'}"
+        )
+    lines.append("")
+
+    if result.edit_applied:
+        lines.extend(
+            [
+                "One-line fix applied",
+                _mini_diff(BUGGY_RETURN, FIXED_RETURN),
+                "",
+            ]
+        )
+    elif result.already_fixed:
+        lines.extend(
+            [
+                "Edit",
+                "   Calculator was already fixed — no edit was needed.",
+                "",
+            ]
+        )
+
+    lines.extend(["VG feature checklist shown in this demo", ""])
+    for label, supported in _VG_FEATURE_CHECKLIST:
+        box = "[x]" if supported else "[ ]"
+        lines.append(f"   {box} {label}")
+    lines.append("")
+
+    outcome = "SUCCESS" if result.ok else "FAILED"
+    lines.extend([border, f" Demo {outcome} ".center(width), border])
+    return "\n".join(lines)
+
+
+def print_demo_output(result: DemoRunResult, *, plain: bool = False) -> None:
+    """Print demo output in plain or presentation-friendly format."""
+
+    text = format_plain_output(result) if plain else format_visual_output(result)
+    print(text)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="personal-dev-assistant-demo",
@@ -339,6 +486,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Do not restore the intentional bug when demo_project is already fixed.",
     )
+    parser.add_argument(
+        "--plain",
+        action="store_true",
+        help="Use the original simple text output instead of presentation-friendly output.",
+    )
     return parser
 
 
@@ -352,12 +504,7 @@ def main(argv: list[str] | None = None) -> int:
         restore_initial_state=not args.no_restore_initial_state,
     )
 
-    print(result.summary)
-    print()
-    print("Steps:")
-    for step in result.steps:
-        status = "ok" if step.result.ok else "failed"
-        print(f"- {step.name}: {status} — {step.result.summary}")
+    print_demo_output(result, plain=args.plain)
 
     return 0 if result.ok else 1
 

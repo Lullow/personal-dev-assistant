@@ -254,7 +254,10 @@ Optional flags:
 ```bash
 python -m personal_dev_assistant.demo.runner --project-root .
 python -m personal_dev_assistant.demo.runner --config config.yaml
+python -m personal_dev_assistant.demo.runner --plain
 ```
+
+By default the demo prints **presentation-friendly output** with numbered steps, `[OK]` / `[FAIL]` markers, a mini diff, and a VG feature checklist. Use `--plain` for the original simple text output.
 
 ### Reset and re-run the demo
 
