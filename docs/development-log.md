@@ -349,6 +349,35 @@ YYYY-MM-DD
 
 - Free-form LLM-läge och stöd för bredare buggar kan bli framtida förbättringar.
 
+### 2026-05-30 - Experimental LLM agent mode
+
+#### Vad som implementerades
+
+- Lade till experimentellt `personal-dev-assistant run-agent "task" --llm`-läge.
+- Tydligt markerat som experimentellt och valfritt; inte primär demo-väg.
+- Kräver `OPENAI_API_KEY` från environment variables.
+- Använder befintlig `MainAgent` och OpenAI-kompatibel `ChatClient`.
+- Använder `TokenBudgetMonitor`.
+- Respekterar max steps, token hard-cap, safety checks, blockerade paths och safe bash-begränsningar.
+- Första versionen tillåter endast `read_file`, `list_project_files`, `bash` och `finish`.
+- `partial_edit` och subagents är avsiktligt inaktiverade i experimentellt läge av säkerhetsskäl.
+- Ogiltigt model action-format stoppar säkert.
+- Lade till tester i `tests/test_run_agent.py`.
+- Uppdaterade `README.md` och `docs/demo-script.md`.
+
+#### VG-krav / presentationsnytta
+
+- Visar en säker väg mot en riktig LLM-driven agent samtidigt som deterministisk demo fortsätter vara primär pålitlig demo.
+
+#### Tester
+
+- Kördes: `./.venv/bin/python -m pytest tests`
+- Resultat: 180 passed.
+
+#### Begränsning / nästa steg
+
+- Låt LLM föreslå edits säkert, lägg till reviewer/sub-agent-godkännande innan `partial_edit` aktiveras.
+
 ### YYYY-MM-DD
 
 ### Vad jag gjorde
