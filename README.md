@@ -32,11 +32,11 @@ The included demo project (`demo_project/`) contains an intentional bug in `calc
 | Sub-agent orchestration (`planner`, `explorer`, `coder`, `reviewer`) | Implemented (sequential) |
 | Deterministic demo runner | Implemented |
 | Interactive terminal mode (`chat`) | Implemented (deterministic MVP, no API key) |
-| Experimental LLM agent mode (`run-agent --llm`) | Implemented (optional, restricted, requires API key) |
+| Experimental LLM agent mode (`run-agent --llm`) | Implemented (optional, restricted, requires API key; safe `propose_edit` by default) |
 | LLM-backed free-form chat | **Not implemented** |
 | Docker packaging | Implemented |
 
-**180 tests** currently pass.
+**192 tests** currently pass.
 
 For implementation history, see [`docs/development-log.md`](docs/development-log.md).
 
@@ -339,16 +339,50 @@ What it does:
 
 - Uses the real `MainAgent` loop and OpenAI-compatible `ChatClient`
 - Respects max steps, token hard cap, safety checks, and existing tools
-- Allows only: `read_file`, `list_project_files`, `bash`, `finish`
-- **Does not allow** LLM-driven `partial_edit` or `subagents` in this step
+- Allows: `read_file`, `list_project_files`, `bash`, `propose_edit`, `finish`
+- **Does not allow** direct LLM-driven `partial_edit`, `write_file`, or `subagents`
 - Stops safely if the model returns an invalid action format or a disallowed action
 - Does not auto-execute risky commands (they are blocked by the safety layer)
+
+### Safe proposed edits (default)
+
+In experimental LLM mode, the model may propose a change with `ACTION: propose_edit` instead of editing files directly. By default, proposals are **validated but not applied** — the file on disk stays unchanged.
+
+The model must use this strict format:
+
+```text
+ACTION: propose_edit
+PATH: relative/path.py
+OLD_TEXT:
+exact old text
+NEW_TEXT:
+exact new text
+REASON:
+short reason
+```
+
+When a proposal is received, the system:
+
+- validates the path (same rules as `partial_edit`)
+- requires non-empty `OLD_TEXT` that appears exactly once in the file
+- rejects no-op edits, blocked paths, and binary/non-UTF-8 files
+- returns a compact observation with a mini diff when valid
+- tells you how to apply the edit safely if you choose to
+
+**By default, nothing is written.** To actually apply validated proposals, opt in explicitly:
+
+```bash
+personal-dev-assistant run-agent "Fix the calculator bug" --llm --apply-proposed-edits
+```
+
+With `--apply-proposed-edits`, valid proposals are applied through the existing `partial_edit` tool (same safety checks; no bypass). Without the flag, you can review the mini diff in the agent output first.
 
 Example output starts with:
 
 ```text
 *** EXPERIMENTAL LLM AGENT MODE ***
 Optional live LLM path — not the primary demo route.
+Proposed edits are validated by default and not applied unless --apply-proposed-edits is set.
 ```
 
 ## Project layout
@@ -380,7 +414,7 @@ Be honest about scope — this is a course-sized assistant, not production tooli
 - **Not a full Claude Code replacement.** It targets a small, demo-friendly workflow.
 - **Interactive mode is deterministic** — scripted commands and agent-style labels, not free-form LLM chat.
 - **Sub-agents run sequentially**, not in parallel.
-- **Experimental LLM mode is restricted** — read/list/bash/finish only; no LLM-driven edits yet.
+- **Experimental LLM mode is restricted** — read/list/bash/propose_edit/finish; direct edits require `--apply-proposed-edits`.
 - **Demo and chat remain the primary presentation paths** without an API key.
 - **Small project scope.** It is meant for `demo_project/`-scale tasks, not large refactors.
 

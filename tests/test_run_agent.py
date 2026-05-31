@@ -9,6 +9,7 @@ from personal_dev_assistant.agents.main import (
     EXPERIMENTAL_ACTION_PROTOCOL,
     EXPERIMENTAL_ALLOWED_ACTIONS,
 )
+from personal_dev_assistant.agents.protocol import parse_agent_action
 from personal_dev_assistant.budget import TokenBudgetMonitor
 from personal_dev_assistant.config import AppConfig, EnvironmentConfig, RuntimeConfig
 from personal_dev_assistant.llm.client import MissingApiKeyError
@@ -29,7 +30,12 @@ def _runtime(*, api_key: str | None = None) -> RuntimeConfig:
     )
 
 
-def _experimental_agent(tmp_path, responses: list[str]) -> MainAgent:
+def _experimental_agent(
+    tmp_path,
+    responses: list[str],
+    *,
+    apply_proposed_edits: bool = False,
+) -> MainAgent:
     runtime = _runtime()
     monitor = TokenBudgetMonitor(runtime.app)
     client = ScriptedChatClient(
@@ -45,6 +51,26 @@ def _experimental_agent(tmp_path, responses: list[str]) -> MainAgent:
         allowed_actions=EXPERIMENTAL_ALLOWED_ACTIONS,
         stop_on_invalid_action=True,
         action_protocol=EXPERIMENTAL_ACTION_PROTOCOL,
+        apply_proposed_edits=apply_proposed_edits,
+    )
+
+
+def _propose_edit_response(
+    path: str,
+    old_text: str,
+    new_text: str,
+    *,
+    reason: str = "Fix bug",
+) -> str:
+    return (
+        "ACTION: propose_edit\n"
+        f"PATH: {path}\n"
+        "OLD_TEXT:\n"
+        f"{old_text}\n"
+        "NEW_TEXT:\n"
+        f"{new_text}\n"
+        "REASON:\n"
+        f"{reason}"
     )
 
 
@@ -177,3 +203,117 @@ def test_cli_run_agent_missing_api_key_returns_error(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     exit_code = cli_main(["run-agent", "Inspect demo_project", "--llm"])
     assert exit_code == 2
+
+
+def test_parse_propose_edit_multiline_format():
+    text = (
+        "ACTION: propose_edit\n"
+        "PATH: demo.py\n"
+        "OLD_TEXT:\n"
+        "return a - b\n"
+        "NEW_TEXT:\n"
+        "return a + b\n"
+        "REASON:\n"
+        "Fix add"
+    )
+    action = parse_agent_action(text)
+
+    assert action.name == "propose_edit"
+    assert action.params["path"] == "demo.py"
+    assert action.params["old_text"] == "return a - b"
+    assert action.params["new_text"] == "return a + b"
+    assert action.params["reason"] == "Fix add"
+
+
+def test_experimental_propose_edit_valid_but_not_applied_by_default(tmp_path):
+    target = tmp_path / "demo.py"
+    target.write_text("return a - b\n", encoding="utf-8")
+    agent = _experimental_agent(
+        tmp_path,
+        [
+            _propose_edit_response("demo.py", "return a - b", "return a + b"),
+            "ACTION: finish\nFINAL: Proposed fix.",
+        ],
+    )
+
+    result = agent.run("Propose a fix.")
+
+    assert result.stopped_reason == "finish"
+    assert target.read_text(encoding="utf-8") == "return a - b\n"
+    assert any("not applied" in observation.lower() for observation in result.observations)
+    assert any("mini_diff" in observation or "- return a - b" in observation for observation in result.observations)
+
+
+def test_experimental_propose_edit_applied_with_apply_flag(tmp_path):
+    target = tmp_path / "demo.py"
+    target.write_text("return a - b\n", encoding="utf-8")
+    agent = _experimental_agent(
+        tmp_path,
+        [
+            _propose_edit_response("demo.py", "return a - b", "return a + b"),
+            "ACTION: finish\nFINAL: Applied fix.",
+        ],
+        apply_proposed_edits=True,
+    )
+
+    result = agent.run("Apply a fix.")
+
+    assert result.stopped_reason == "finish"
+    assert target.read_text(encoding="utf-8") == "return a + b\n"
+    assert any("propose_edit" in observation for observation in result.observations)
+
+
+def test_experimental_propose_edit_blocked_path_is_rejected(tmp_path):
+    env_file = tmp_path / ".env"
+    env_file.write_text("SECRET=1\n", encoding="utf-8")
+    agent = _experimental_agent(
+        tmp_path,
+        [
+            _propose_edit_response(".env", "SECRET=1", "SECRET=0"),
+            "ACTION: finish\nFINAL: Blocked.",
+        ],
+    )
+
+    result = agent.run("Propose bad path.")
+
+    assert result.stopped_reason == "finish"
+    assert env_file.read_text(encoding="utf-8") == "SECRET=1\n"
+    assert any("blocked" in observation.lower() for observation in result.observations)
+
+
+def test_experimental_invalid_propose_edit_format_stops_safely(tmp_path):
+    agent = _experimental_agent(
+        tmp_path,
+        ["ACTION: propose_edit\nPATH: demo.py\nREASON:\nMissing old/new text"],
+    )
+
+    result = agent.run("Bad proposal.")
+
+    assert result.stopped_reason == "invalid_propose_edit"
+    assert "missing required field" in result.final_response.lower()
+
+
+def test_run_experimental_llm_agent_passes_apply_flag(tmp_path):
+    target = tmp_path / "demo.py"
+    target.write_text("return a - b\n", encoding="utf-8")
+    runtime = _runtime()
+    monitor = TokenBudgetMonitor(runtime.app)
+    client = ScriptedChatClient(
+        model=runtime.app.model,
+        budget_monitor=monitor,
+        responses=[
+            _propose_edit_response("demo.py", "return a - b", "return a + b"),
+            "ACTION: finish\nFINAL: Done.",
+        ],
+    )
+
+    result = run_experimental_llm_agent(
+        "Apply proposal.",
+        runtime_config=runtime,
+        project_root=tmp_path,
+        chat_client=client,
+        apply_proposed_edits=True,
+    )
+
+    assert target.read_text(encoding="utf-8") == "return a + b\n"
+    assert result.agent_result.stopped_reason == "finish"

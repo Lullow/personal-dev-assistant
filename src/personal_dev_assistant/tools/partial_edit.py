@@ -10,7 +10,7 @@ from personal_dev_assistant.safety import SafetyDecision, check_path_safety
 from personal_dev_assistant.tools.filesystem import _resolve_project_path
 
 
-def partial_edit(
+def validate_partial_edit(
     path: str,
     old_text: str,
     new_text: str,
@@ -19,7 +19,7 @@ def partial_edit(
     project_root: str | Path = ".",
     config: AppConfig | None = None,
 ) -> ToolResult:
-    """Apply a small, exact-match text replacement in an allowed project file."""
+    """Validate a partial edit proposal without modifying files."""
 
     app_config = config or AppConfig()
 
@@ -100,6 +100,49 @@ def partial_edit(
             reason="old_text not unique",
         )
 
+    summary = f"Edit proposal for `{relative_path}` is valid."
+    if reason.strip():
+        summary = f"{summary} Reason: {reason.strip()}"
+
+    return ToolResult(
+        ok=True,
+        summary=summary,
+        output={
+            "path": relative_path,
+            "changed": False,
+            "valid": True,
+            "reason": reason.strip() or None,
+        },
+    )
+
+
+def partial_edit(
+    path: str,
+    old_text: str,
+    new_text: str,
+    reason: str = "",
+    *,
+    project_root: str | Path = ".",
+    config: AppConfig | None = None,
+) -> ToolResult:
+    """Apply a small, exact-match text replacement in an allowed project file."""
+
+    app_config = config or AppConfig()
+    validation = validate_partial_edit(
+        path,
+        old_text,
+        new_text,
+        reason,
+        project_root=project_root,
+        config=app_config,
+    )
+    if not validation.ok:
+        return validation
+
+    relative_path = str(validation.output.get("path", path))
+    root = Path(project_root).resolve()
+    target = (root / relative_path).resolve()
+    content = target.read_text(encoding="utf-8")
     updated_content = content.replace(old_text, new_text, 1)
     target.write_text(updated_content, encoding="utf-8")
 

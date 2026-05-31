@@ -73,6 +73,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=".",
         help="Project root for safe tool operations.",
     )
+    run_agent_parser.add_argument(
+        "--apply-proposed-edits",
+        action="store_true",
+        help="Apply valid propose_edit actions through partial_edit after validation.",
+    )
 
     run_parser = subparsers.add_parser(
         "run",
@@ -113,6 +118,7 @@ def main(argv: list[str] | None = None) -> int:
                 args.task,
                 runtime_config=runtime_config,
                 project_root=args.project_root,
+                apply_proposed_edits=args.apply_proposed_edits,
             )
         except MissingApiKeyError as error:
             print(str(error), file=sys.stderr)

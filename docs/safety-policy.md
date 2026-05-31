@@ -85,3 +85,15 @@ Partial edits must follow these rules:
 - Run relevant tests after edits when a test command is available.
 
 For the demo, the expected safe edit is a single-line fix in `demo_project/calculator.py`.
+
+## Proposed edit safety rules (experimental LLM mode)
+
+In experimental LLM mode, the model may use `ACTION: propose_edit` instead of calling `partial_edit` directly.
+
+Default behavior is **non-destructive**:
+
+- Proposals are validated with the same path and text rules as `partial_edit`.
+- Files are **not modified** unless the user runs with `--apply-proposed-edits`.
+- When applying is enabled, the system still routes through `partial_edit` — no raw writes or bypass.
+
+Invalid proposals (missing fields, blocked paths, empty `OLD_TEXT`, duplicate matches, no-op edits) are rejected with a clear observation. Malformed `propose_edit` responses stop the agent safely.

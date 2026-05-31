@@ -18,8 +18,9 @@ from personal_dev_assistant.llm.client import ChatClient, MissingApiKeyError, cr
 EXPERIMENTAL_BANNER = """
 *** EXPERIMENTAL LLM AGENT MODE ***
 Optional live LLM path — not the primary demo route.
-Requires OPENAI_API_KEY. Uses MainAgent with safe read/list/bash/finish only.
-partial_edit and subagents are disabled in this step.
+Requires OPENAI_API_KEY. Uses MainAgent with safe read/list/bash/propose_edit/finish.
+Proposed edits are validated by default and not applied unless --apply-proposed-edits is set.
+partial_edit and subagents remain disabled for direct LLM use.
 """.strip()
 
 
@@ -40,6 +41,7 @@ def run_experimental_llm_agent(
     prompts_root: str | Path | None = None,
     chat_client: ChatClient | None = None,
     max_steps: int = 10,
+    apply_proposed_edits: bool = False,
 ) -> ExperimentalRunResult:
     """Run MainAgent in restricted experimental LLM mode."""
 
@@ -68,6 +70,7 @@ def run_experimental_llm_agent(
         allowed_actions=EXPERIMENTAL_ALLOWED_ACTIONS,
         stop_on_invalid_action=True,
         action_protocol=EXPERIMENTAL_ACTION_PROTOCOL,
+        apply_proposed_edits=apply_proposed_edits,
     )
     result = agent.run(task)
     return ExperimentalRunResult(agent_result=result, model=runtime_config.app.model)
