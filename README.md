@@ -202,7 +202,8 @@ Environment variables can override some values:
 
 | Variable | Purpose |
 | --- | --- |
-| `OPENAI_API_KEY` | API key for OpenAI-compatible LLM calls |
+| `OPENAI_API_KEY` | API key for OpenAI-compatible LLM calls (use your [OpenRouter](https://openrouter.ai/) key for experimental mode) |
+| `OPENAI_BASE_URL` | API base URL (set to `https://openrouter.ai/api/v1` for OpenRouter) |
 | `MODEL` | Overrides `model` in `config.yaml` |
 | `TOKEN_BUDGET` | Overrides `token_budget.max_tokens` |
 | `REQUIRE_COMMAND_APPROVAL` | Overrides `safety.require_confirmation_for_risky_commands` |
@@ -331,10 +332,18 @@ Example:
 
 This is **not** the primary demo path. Use the deterministic demo or `chat` mode for presentations without an API key.
 
-Requires `OPENAI_API_KEY` in the environment:
+Requires `OPENAI_API_KEY` (and OpenRouter base URL) in the environment. Default model in [`config.yaml`](config.yaml) is `openai/gpt-5.1-codex-mini`.
+
+Create `.env` from [`.env.example`](.env.example):
 
 ```bash
-export OPENAI_API_KEY=your-key-here
+OPENAI_API_KEY=your-openrouter-key-here
+OPENAI_BASE_URL=https://openrouter.ai/api/v1
+```
+
+```bash
+export OPENAI_API_KEY=your-openrouter-key-here
+export OPENAI_BASE_URL=https://openrouter.ai/api/v1
 personal-dev-assistant run-agent "Inspect demo_project and run pytest" --llm
 ```
 
@@ -356,7 +365,8 @@ In experimental LLM mode, the model may propose a change with `ACTION: propose_e
 #### Review only (default)
 
 ```bash
-export OPENAI_API_KEY=your-key-here
+export OPENAI_API_KEY=your-openrouter-key-here
+export OPENAI_BASE_URL=https://openrouter.ai/api/v1
 personal-dev-assistant run-agent "Inspect demo_project, run pytest, and propose a fix" --llm
 ```
 

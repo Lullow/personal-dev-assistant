@@ -8,7 +8,7 @@ This document defines the small implementation target for Personal Dev Assistant
 - Runtime style: terminal CLI application.
 - Testing: `pytest`.
 - Configuration: `config.yaml` for non-secret settings and environment variables for secrets.
-- LLM provider: OpenAI-compatible chat model configured through environment variables and `config.yaml`.
+- LLM provider: OpenAI-compatible chat API (OpenRouter supported via env vars and `config.yaml` model id).
 - Packaging target: simple local install/run instructions first. Before final submission, the project should either include Docker packaging or a very clear, idiot-proof setup guide.
 
 ## Configuration
@@ -16,7 +16,7 @@ This document defines the small implementation target for Personal Dev Assistant
 The project root contains a non-secret `config.yaml` with default runtime settings.
 
 ```yaml
-model: "gpt-4o-mini"
+model: "openai/gpt-5.1-codex-mini"
 token_budget:
   max_tokens: 50000
   warning_threshold: 0.8
@@ -40,9 +40,10 @@ Expected behavior:
 
 ## Environment variables
 
-Required:
+Required for experimental LLM mode with OpenRouter:
 
-- `OPENAI_API_KEY`: API key for the selected LLM provider.
+- `OPENAI_API_KEY`: your OpenRouter API key.
+- `OPENAI_BASE_URL`: `https://openrouter.ai/api/v1`
 
 Optional:
 
