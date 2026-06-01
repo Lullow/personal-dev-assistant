@@ -487,6 +487,97 @@ YYYY-MM-DD
 
 - Testa mot riktig API-nyckel/modell och förbättra action-format-robusthet vid behov (t.ex. JSON schema).
 
+### 2026-06-01 - OpenRouter model configuration
+
+#### Vad som implementerades
+
+- Uppdaterade standardmodell i `config.yaml` till `openai/gpt-5.1-codex-mini`.
+- Uppdaterade `.env.example`, `README.md` och `docs/technical-spec.md` för OpenRouter-setup.
+- Experimentellt LLM-läge använder OpenRouter via OpenAI-kompatibla environment variables:
+  - `OPENAI_API_KEY`
+  - `OPENAI_BASE_URL=https://openrouter.ai/api/v1`
+- Deterministisk demo och `chat` kräver fortfarande ingen API-nyckel.
+
+#### Tester
+
+- Kördes: `./.venv/bin/python -m pytest tests`
+- Resultat: 246 passed.
+
+#### Begränsning / nästa steg
+
+- Verifiera riktigt `run-agent`-beteende mot OpenRouter och fixa base URL-stöd vid behov.
+
+### 2026-06-01 - OpenAI-compatible base URL support
+
+#### Vad som implementerades
+
+- Lade till `OPENAI_BASE_URL`-stöd i runtime/environment config.
+- `ChatClient` använder nu konfigurerad OpenAI-kompatibel base URL i stället för att alltid använda standard OpenAI-endpoint.
+- OpenRouter-anrop går mot `https://openrouter.ai/api/v1/chat/completions`.
+- Standard OpenAI-kompatibel URL används när `OPENAI_BASE_URL` saknas.
+- Förbättrade testisolering så lokala `OPENAI_API_KEY` / `OPENAI_BASE_URL` i shell inte påverkar tester.
+- Lade till/uppdaterade tester i `tests/test_config.py`, `tests/test_llm_client.py`, `tests/test_run_agent.py` och `tests/conftest.py`.
+
+#### Produktnytta
+
+- Experimentellt LLM-läge kan använda OpenRouter säkert via environment variables.
+
+#### Tester
+
+- Kördes: `./.venv/bin/python -m pytest tests`
+- Resultat: 253 passed.
+
+#### Begränsning / nästa steg
+
+- Fortsatt verifiering av riktiga OpenRouter-körningar i `run-agent --llm`.
+
+### 2026-06-01 - Experimental LLM parse failure debugging
+
+#### Vad som implementerades
+
+- Förbättrade felsökning vid ogiltiga actions i experimentellt `run-agent`-läge.
+- När modellen returnerar ett oparsbart svar visar terminaltrace nu **PARSE FAILURE** och **RAW MODEL RESPONSE**.
+- Raw model response kompakteras/trunkeras enligt befintliga compaction-regler.
+- Lade till grundläggande secret redaction för API-key-liknande strängar och bearer tokens.
+- Stärkte experimentellt action protocol med striktare no-prose- och one-ACTION-block-instruktioner.
+- Verifierade med live OpenRouter-körning att parse failures nu syns tydligt och är lättare att felsöka.
+
+#### Tester
+
+- Kördes: `./.venv/bin/python -m pytest tests`
+- Resultat: 257 passed.
+
+#### Begränsning / nästa steg
+
+- Förbättra parser-robusthet för vanliga LLM-formateringsmisstag.
+
+### 2026-06-01 - Experimental LLM action parsing robustness
+
+#### Vad som implementerades
+
+- Förbättrade action parser-robusthet för vanliga LLM-formateringsvariationer.
+- Parser tolererar nu inline parameter-misstag, t.ex.:
+  - `ACTION: bash command: pytest demo_project`
+  - `ACTION: read_file path: demo_project/calculator.py`
+- Parser stödjer även split ACTION-rader, t.ex.:
+  - `ACTION:`
+  - `list_project_files`
+- Lade till tester i `tests/test_protocol.py`.
+- Stärkte protocol-text för att avråda från inline-parametrar och kräva korrekt ACTION-format.
+- Direkt `partial_edit` och subagents förblir blockerade i experimentellt LLM-läge.
+- Bash safety och `allowed_actions`-kontroller försvagades inte.
+- Live OpenRouter-körning nådde flödet:
+  `list_project_files` → `bash pytest demo_project` → `read_file demo_project/calculator.py` → `propose_edit` → `finish`.
+
+#### Tester
+
+- Kördes: `./.venv/bin/python -m pytest tests`
+- Resultat: 268 passed.
+
+#### Begränsning / nästa steg
+
+- Förbättra finish-hantering när modellen utelämnar en användbar FINAL-sammanfattning.
+
 ### YYYY-MM-DD
 
 ### Vad jag gjorde
