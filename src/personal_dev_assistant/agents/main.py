@@ -86,10 +86,16 @@ Testing demo_project:
 - Do NOT run full-repo pytest unless the user explicitly asks for the whole repository.
 
 Fix proposal tasks (MUST use propose_edit):
-- If the user asks to propose a fix, suggest a fix, prepare a fix, or similar, you MUST use ACTION: propose_edit before ACTION: finish.
+- If the user task asks to propose a fix, suggest a fix, prepare a fix, edit code, or similar, you MUST use ACTION: propose_edit before ACTION: finish whenever you have enough information to construct OLD_TEXT and NEW_TEXT.
+- Do NOT call ACTION: finish while a fix proposal is still pending submission.
 - Do NOT claim a fix was proposed in FINAL unless ACTION: propose_edit was actually used in this run.
 - Do NOT describe a code change only in FINAL — submit it through ACTION: propose_edit so the reviewer gate runs.
-- After ACTION: read_file, when you know the exact OLD_TEXT and NEW_TEXT for a fix, your NEXT action must be ACTION: propose_edit (not ACTION: finish).
+- After ACTION: read_file, when you identify a concrete bug fix and know the exact OLD_TEXT and NEW_TEXT, your NEXT action MUST be ACTION: propose_edit (never ACTION: finish).
+
+Truthfulness rules for propose_edit (CRITICAL):
+- Never claim in FINAL that a proposed edit was submitted, reviewed, risk-rated, applied, or not applied unless ACTION: propose_edit actually ran in this session.
+- Only report reviewer risk level, apply status, or validation results that appear in the propose_edit observation — do not invent them.
+- If you have not yet called ACTION: propose_edit, FINAL must not mention reviewed proposals, reviewer risk, or --apply-proposed-edits.
 
 After ACTION: propose_edit:
 - If the observation says the proposal is valid but not applied, your NEXT reply must be ACTION: finish with FINAL.
@@ -168,6 +174,31 @@ FINISH action rules (FINAL is required):
 _FINISH_WITHOUT_FINAL_FALLBACK = (
     "Finished, but the model did not provide a FINAL summary. "
     "See the agent trace above for the latest tool/reviewer observations."
+)
+
+_FINISH_FALSE_PROPOSE_EDIT_CLAIM_FALLBACK = (
+    "Finished, but no proposed edit was submitted in this run. "
+    "The trace shows the issue was identified, but the model ended before calling propose_edit."
+)
+
+_FINAL_NEGATES_PROPOSE_EDIT_CLAIM = re.compile(
+    r"\b(?:no|not|never|without|didn't|did not)\b.{0,40}\b(?:proposed edit|propose_edit)\b",
+    re.IGNORECASE | re.DOTALL,
+)
+
+_FINAL_CLAIMS_PROPOSE_EDIT_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"proposed edit (?:was )?(?:submitted|reviewed|applied)", re.IGNORECASE),
+    re.compile(r"(?:submitted|reviewed) (?:a )?(?:reviewed )?proposed edit", re.IGNORECASE),
+    re.compile(r"reviewed proposed edit", re.IGNORECASE),
+    re.compile(
+        r"\b(?:risk[_\s-]level|risk)\s*[:=(]?\s*(?:low|medium|high)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(r"reviewer (?:gate|risk|classified|summary|approved)", re.IGNORECASE),
+    re.compile(r"edit (?:was )?not applied", re.IGNORECASE),
+    re.compile(r"edit was applied", re.IGNORECASE),
+    re.compile(r"--apply-proposed-edits", re.IGNORECASE),
+    re.compile(r"proposal is valid", re.IGNORECASE),
 )
 
 _SECRET_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
@@ -250,6 +281,9 @@ class MainAgent:
 
             action = parse_agent_action(llm_response.text)
             if action.name == "finish":
+                propose_edit_occurred = any(
+                    record.action == "propose_edit" for record in step_records
+                )
                 step_records.append(
                     _make_step_record(
                         steps,
@@ -261,6 +295,7 @@ class MainAgent:
                     final_response=_resolve_finish_final_response(
                         action,
                         llm_response.text,
+                        propose_edit_occurred=propose_edit_occurred,
                     ),
                     steps=steps,
                     stopped_reason="finish",
@@ -482,12 +517,29 @@ def _is_useless_finish_final(final_response: str | None) -> bool:
     return normalized in {"ACTION: FINISH", "ACTION:FINISH"}
 
 
-def _resolve_finish_final_response(action: AgentAction, raw_text: str) -> str:
-    """Return the model FINAL summary, or a safe fallback when it is missing."""
+def _final_claims_propose_edit_occurred(final_response: str) -> bool:
+    """True when FINAL text asserts a propose_edit outcome without evidence."""
+
+    if _FINAL_NEGATES_PROPOSE_EDIT_CLAIM.search(final_response):
+        return False
+    return any(
+        pattern.search(final_response) for pattern in _FINAL_CLAIMS_PROPOSE_EDIT_PATTERNS
+    )
+
+
+def _resolve_finish_final_response(
+    action: AgentAction,
+    raw_text: str,
+    *,
+    propose_edit_occurred: bool = False,
+) -> str:
+    """Return the model FINAL summary, or a safe fallback when it is missing or untruthful."""
 
     candidate = action.final_response or raw_text.strip()
     if _is_useless_finish_final(candidate):
         return _FINISH_WITHOUT_FINAL_FALLBACK
+    if not propose_edit_occurred and _final_claims_propose_edit_occurred(candidate):
+        return _FINISH_FALSE_PROPOSE_EDIT_CLAIM_FALLBACK
     return candidate
 
 

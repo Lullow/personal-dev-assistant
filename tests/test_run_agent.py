@@ -209,7 +209,10 @@ def test_experimental_action_protocol_strict_format_and_examples():
     assert "propose a fix" in protocol.lower()
     assert "Do NOT claim a fix was proposed" in protocol or "do not claim" in protocol.lower()
     assert "unless ACTION: propose_edit was actually used" in protocol
-    assert "NEXT action must be ACTION: propose_edit" in protocol
+    assert (
+        "NEXT action must be ACTION: propose_edit" in protocol
+        or "NEXT action MUST be ACTION: propose_edit" in protocol
+    )
     assert "Full example flow for a fix proposal task" in protocol
     assert "submitted a reviewed proposed edit" in protocol
     assert "ACTION: propose_edit\nPATH: demo_project/calculator.py\nOLD_TEXT:\ndef add(a, b):" in protocol
@@ -221,6 +224,82 @@ def test_experimental_action_protocol_strict_format_and_examples():
     assert "MUST always include FINAL:" in protocol or "MUST always include FINAL" in protocol
     assert "--apply-proposed-edits if not applied" in protocol or (
         "how to apply with --apply-proposed-edits" in protocol
+    )
+    assert "Truthfulness rules for propose_edit" in protocol
+    assert "Never claim in FINAL" in protocol or "never claim" in protocol.lower()
+    assert "do not invent" in protocol.lower() or "do not invent them" in protocol.lower()
+
+
+def test_experimental_finish_claiming_propose_edit_without_action_gets_fallback(tmp_path):
+    """Smoke-test scenario: model finishes after read_file but claims propose_edit ran."""
+    demo_dir = tmp_path / "demo_project"
+    demo_dir.mkdir()
+    calculator = demo_dir / "calculator.py"
+    calculator.write_text("def add(a, b):\n    return a - b\n", encoding="utf-8")
+
+    agent = _experimental_agent(
+        tmp_path,
+        [
+            "ACTION: list_project_files",
+            "ACTION: bash\nCOMMAND: pytest demo_project",
+            "ACTION: read_file\nPATH: demo_project/calculator.py",
+            (
+                "ACTION: finish\n"
+                "FINAL: Reviewed proposed edit submitted (risk low); edit not applied here."
+            ),
+        ],
+    )
+
+    result = agent.run(
+        "Inspect demo_project, run pytest, and propose a fix for the failing test"
+    )
+
+    assert result.stopped_reason == "finish"
+    assert "no proposed edit was submitted" in result.final_response
+    assert "ended before calling propose_edit" in result.final_response
+    assert not any(record.action == "propose_edit" for record in result.step_records)
+
+
+def test_experimental_finish_after_propose_edit_accepts_proposal_claim(tmp_path):
+    demo_dir = tmp_path / "demo_project"
+    demo_dir.mkdir()
+    target = demo_dir / "calculator.py"
+    target.write_text("return a - b\n", encoding="utf-8")
+    final_text = (
+        "Reviewed proposed edit submitted (risk low); edit not applied here. "
+        "Re-run with --apply-proposed-edits to apply."
+    )
+    agent = _experimental_agent(
+        tmp_path,
+        [
+            _propose_edit_response(
+                "demo_project/calculator.py",
+                "return a - b",
+                "return a + b",
+            ),
+            f"ACTION: finish\nFINAL: {final_text}",
+        ],
+    )
+
+    result = agent.run("Propose a fix.")
+
+    assert result.stopped_reason == "finish"
+    assert result.final_response == final_text
+    assert any(record.action == "propose_edit" for record in result.step_records)
+
+
+def test_final_claims_propose_edit_occurred_detects_false_claims():
+    from personal_dev_assistant.agents.main import _final_claims_propose_edit_occurred
+
+    assert _final_claims_propose_edit_occurred(
+        "Reviewed proposed edit submitted (risk low); edit not applied here."
+    )
+    assert _final_claims_propose_edit_occurred(
+        "Submitted a reviewed proposed edit. Re-run with --apply-proposed-edits."
+    )
+    assert not _final_claims_propose_edit_occurred("Listed project files successfully.")
+    assert not _final_claims_propose_edit_occurred(
+        "No proposed edit was submitted in this run."
     )
 
 
