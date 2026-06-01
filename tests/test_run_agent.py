@@ -59,6 +59,10 @@ def _experimental_agent(
     )
 
 
+def _read_file_response(path: str) -> str:
+    return f"ACTION: read_file\nPATH: {path}"
+
+
 def _propose_edit_response(
     path: str,
     old_text: str,
@@ -228,6 +232,10 @@ def test_experimental_action_protocol_strict_format_and_examples():
     assert "Truthfulness rules for propose_edit" in protocol
     assert "Never claim in FINAL" in protocol or "never claim" in protocol.lower()
     assert "do not invent" in protocol.lower() or "do not invent them" in protocol.lower()
+    assert "Trace-grounding rules" in protocol
+    assert "read_file on the target file" in protocol
+    assert "Do NOT claim tests failed" in protocol or "do not claim tests failed" in protocol.lower()
+    assert "unless ACTION: bash ran" in protocol or "ACTION: bash ran" in protocol
 
 
 def test_experimental_finish_claiming_propose_edit_without_action_gets_fallback(tmp_path):
@@ -272,6 +280,7 @@ def test_experimental_finish_after_propose_edit_accepts_proposal_claim(tmp_path)
     agent = _experimental_agent(
         tmp_path,
         [
+            _read_file_response("demo_project/calculator.py"),
             _propose_edit_response(
                 "demo_project/calculator.py",
                 "return a - b",
@@ -285,7 +294,145 @@ def test_experimental_finish_after_propose_edit_accepts_proposal_claim(tmp_path)
 
     assert result.stopped_reason == "finish"
     assert result.final_response == final_text
-    assert any(record.action == "propose_edit" for record in result.step_records)
+    assert any(
+        record.action == "propose_edit"
+        and record.observation
+        and "propose_edit blocked:" not in record.observation.lower()
+        for record in result.step_records
+    )
+
+
+def test_experimental_finish_claiming_test_failure_without_bash_gets_fallback(tmp_path):
+    """Smoke-test scenario: propose_edit without pytest, FINAL claims tests failed."""
+    demo_dir = tmp_path / "demo_project"
+    demo_dir.mkdir()
+    calculator = demo_dir / "calculator.py"
+    calculator.write_text("def add(a, b):\n    return a - b\n", encoding="utf-8")
+
+    agent = _experimental_agent(
+        tmp_path,
+        [
+            "ACTION: list_project_files",
+            _read_file_response("demo_project/calculator.py"),
+            _propose_edit_response(
+                "demo_project/calculator.py",
+                "return a - b",
+                "return a + b",
+            ),
+            (
+                "ACTION: finish\n"
+                "FINAL: Tests fail because add() subtracts. "
+                "Reviewed proposed edit submitted (not applied)."
+            ),
+        ],
+    )
+
+    result = agent.run(
+        "Inspect demo_project, run pytest, and propose a fix for the failing test"
+    )
+
+    assert result.stopped_reason == "finish"
+    assert "no test command was run" in result.final_response
+    assert "trace does not support" in result.final_response.lower()
+
+
+def test_experimental_finish_after_bash_accepts_test_summary(tmp_path):
+    demo_dir = tmp_path / "demo_project"
+    demo_dir.mkdir()
+    (demo_dir / "calculator.py").write_text("return a - b\n", encoding="utf-8")
+
+    agent = _experimental_agent(
+        tmp_path,
+        [
+            "ACTION: bash\nCOMMAND: pytest demo_project",
+            _read_file_response("demo_project/calculator.py"),
+            _propose_edit_response(
+                "demo_project/calculator.py",
+                "return a - b",
+                "return a + b",
+            ),
+            (
+                "ACTION: finish\n"
+                "FINAL: Tests fail because add() subtracts. "
+                "Reviewed proposed edit submitted (not applied)."
+            ),
+        ],
+    )
+
+    result = agent.run("Run pytest and propose a fix.")
+
+    assert result.stopped_reason == "finish"
+    assert "Tests fail because add() subtracts." in result.final_response
+
+
+def test_experimental_propose_edit_before_read_file_is_blocked(tmp_path):
+    demo_dir = tmp_path / "demo_project"
+    demo_dir.mkdir()
+    target = demo_dir / "calculator.py"
+    target.write_text("return a - b\n", encoding="utf-8")
+
+    agent = _experimental_agent(
+        tmp_path,
+        [
+            "ACTION: list_project_files",
+            _propose_edit_response(
+                "demo_project/calculator.py",
+                "return a - b",
+                "return a + b",
+            ),
+            "ACTION: finish\nFINAL: Done.",
+        ],
+    )
+
+    result = agent.run("Propose a fix.")
+
+    assert result.stopped_reason == "finish"
+    assert target.read_text(encoding="utf-8") == "return a - b\n"
+    assert any(
+        "not read in this run" in observation.lower()
+        for observation in result.observations
+    )
+    assert not any(
+        "risk_level" in observation or "reviewer_summary" in observation
+        for observation in result.observations
+    )
+
+
+def test_experimental_propose_edit_after_read_file_works(tmp_path):
+    demo_dir = tmp_path / "demo_project"
+    demo_dir.mkdir()
+    target = demo_dir / "calculator.py"
+    target.write_text("return a - b\n", encoding="utf-8")
+
+    agent = _experimental_agent(
+        tmp_path,
+        [
+            _read_file_response("demo_project/calculator.py"),
+            _propose_edit_response(
+                "demo_project/calculator.py",
+                "return a - b",
+                "return a + b",
+            ),
+            "ACTION: finish\nFINAL: Proposed fix.",
+        ],
+    )
+
+    result = agent.run("Propose a fix.")
+
+    assert result.stopped_reason == "finish"
+    assert any(
+        "risk_level" in observation or "reviewer_summary" in observation
+        for observation in result.observations
+    )
+
+
+def test_final_claims_test_results_detects_false_claims():
+    from personal_dev_assistant.agents.main import _final_claims_test_results
+
+    assert _final_claims_test_results("Tests fail because add() subtracts.")
+    assert _final_claims_test_results("Ran pytest and found a failing test.")
+    assert not _final_claims_test_results("Listed project files successfully.")
+    assert not _final_claims_test_results("No test command was run in this session.")
 
 
 def test_final_claims_propose_edit_occurred_detects_false_claims():
@@ -417,6 +564,7 @@ def test_format_experimental_output_labels_propose_edit_reviewer(tmp_path):
         model=runtime.app.model,
         budget_monitor=monitor,
         responses=[
+            _read_file_response("demo_project/calculator.py"),
             _propose_edit_response(
                 "demo_project/calculator.py",
                 "return a - b",
@@ -523,6 +671,7 @@ def test_experimental_propose_edit_valid_but_not_applied_by_default(tmp_path):
     agent = _experimental_agent(
         tmp_path,
         [
+            _read_file_response("demo_project/calculator.py"),
             _propose_edit_response(
                 "demo_project/calculator.py",
                 "return a - b",
@@ -551,6 +700,7 @@ def test_experimental_propose_edit_applied_with_apply_flag(tmp_path):
     agent = _experimental_agent(
         tmp_path,
         [
+            _read_file_response("demo_project/calculator.py"),
             _propose_edit_response(
                 "demo_project/calculator.py",
                 "return a - b",
@@ -606,6 +756,7 @@ def test_experimental_propose_edit_high_risk_not_applied_with_apply_flag(tmp_pat
     agent = _experimental_agent(
         tmp_path,
         [
+            _read_file_response("large.py"),
             _propose_edit_response("large.py", old_block, new_block),
             "ACTION: finish\nFINAL: Blocked by reviewer.",
         ],
@@ -630,6 +781,7 @@ def test_run_experimental_llm_agent_passes_apply_flag(tmp_path):
         model=runtime.app.model,
         budget_monitor=monitor,
         responses=[
+            _read_file_response("demo_project/calculator.py"),
             _propose_edit_response(
                 "demo_project/calculator.py",
                 "return a - b",

@@ -84,6 +84,13 @@ First step for project inspection tasks:
 Testing demo_project:
 - For demo_project tasks, prefer: ACTION: bash with COMMAND: pytest demo_project
 - Do NOT run full-repo pytest unless the user explicitly asks for the whole repository.
+- If the user asks to run tests, you MUST call ACTION: bash with the relevant test command before claiming test results in FINAL.
+
+Trace-grounding rules (CRITICAL):
+- Before ACTION: propose_edit, you MUST call ACTION: read_file on the target file unless its exact content was already observed in this run.
+- Do NOT claim tests failed, tests passed, or pytest results in FINAL unless ACTION: bash ran in this session and the observation contains test output.
+- Do NOT claim you inspected or read a file in FINAL unless ACTION: read_file ran on that file in this run or its content appears in an observation.
+- Skipping pytest or read_file when the task requires them produces an incomplete trace — follow the recommended flow below.
 
 Fix proposal tasks (MUST use propose_edit):
 - If the user task asks to propose a fix, suggest a fix, prepare a fix, edit code, or similar, you MUST use ACTION: propose_edit before ACTION: finish whenever you have enough information to construct OLD_TEXT and NEW_TEXT.
@@ -181,6 +188,16 @@ _FINISH_FALSE_PROPOSE_EDIT_CLAIM_FALLBACK = (
     "The trace shows the issue was identified, but the model ended before calling propose_edit."
 )
 
+_FINISH_FALSE_TEST_CLAIM_FALLBACK = (
+    "Finished, but no test command was run in this session. "
+    "The trace does not support the model's test-result summary."
+)
+
+_PROPOSE_EDIT_NOT_READ_MESSAGE = (
+    "propose_edit blocked: target file `{path}` was not read in this run. "
+    "Use ACTION: read_file on that path first so OLD_TEXT matches observed content."
+)
+
 _FINAL_NEGATES_PROPOSE_EDIT_CLAIM = re.compile(
     r"\b(?:no|not|never|without|didn't|did not)\b.{0,40}\b(?:proposed edit|propose_edit)\b",
     re.IGNORECASE | re.DOTALL,
@@ -199,6 +216,20 @@ _FINAL_CLAIMS_PROPOSE_EDIT_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"edit was applied", re.IGNORECASE),
     re.compile(r"--apply-proposed-edits", re.IGNORECASE),
     re.compile(r"proposal is valid", re.IGNORECASE),
+)
+
+_FINAL_NEGATES_TEST_CLAIM = re.compile(
+    r"\b(?:no|not|never|without|didn't|did not)\b.{0,40}\b(?:test|pytest)\b",
+    re.IGNORECASE | re.DOTALL,
+)
+
+_FINAL_CLAIMS_TEST_RESULTS_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"tests?\s+(?:fail(?:ed|ure)?|pass(?:ed|es)?)", re.IGNORECASE),
+    re.compile(r"(?:fail(?:ed|ing)|pass(?:ed|ing))\s+(?:test|tests)", re.IGNORECASE),
+    re.compile(r"failing test", re.IGNORECASE),
+    re.compile(r"\bpytest\b", re.IGNORECASE),
+    re.compile(r"test suite", re.IGNORECASE),
+    re.compile(r"test results?", re.IGNORECASE),
 )
 
 _SECRET_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
@@ -265,6 +296,9 @@ class MainAgent:
         step_records: list[AgentStepRecord] = []
         steps = 0
         messages = self._initial_messages(task)
+        propose_edit_executed = False
+        bash_executed = False
+        experimental_mode = self._allowed_actions == EXPERIMENTAL_ALLOWED_ACTIONS
 
         while steps < self._max_steps:
             steps += 1
@@ -281,9 +315,6 @@ class MainAgent:
 
             action = parse_agent_action(llm_response.text)
             if action.name == "finish":
-                propose_edit_occurred = any(
-                    record.action == "propose_edit" for record in step_records
-                )
                 step_records.append(
                     _make_step_record(
                         steps,
@@ -295,7 +326,8 @@ class MainAgent:
                     final_response=_resolve_finish_final_response(
                         action,
                         llm_response.text,
-                        propose_edit_occurred=propose_edit_occurred,
+                        propose_edit_occurred=propose_edit_executed,
+                        bash_occurred=bash_executed,
                     ),
                     steps=steps,
                     stopped_reason="finish",
@@ -387,10 +419,29 @@ class MainAgent:
                     messages = self._build_messages(task, observations)
                     continue
 
+                if experimental_mode:
+                    trace_error = _propose_edit_trace_error(action, step_records)
+                    if trace_error is not None:
+                        observation = _compact_observation(
+                            "propose_edit",
+                            trace_error,
+                            config=self._app_config,
+                        )
+                        observations.append(observation)
+                        step_records.append(
+                            _make_step_record(steps, action, observation=observation)
+                        )
+                        messages = self._build_messages(task, observations)
+                        continue
+
             tool_result = self._execute_action(action)
             observation = _compact_tool_observation(action.name, tool_result, self._app_config)
             observations.append(observation)
             step_records.append(_make_step_record(steps, action, observation=observation))
+            if action.name == "propose_edit":
+                propose_edit_executed = True
+            elif action.name == "bash":
+                bash_executed = True
             messages = self._build_messages(task, observations)
 
         return MainAgentResult(
@@ -527,11 +578,22 @@ def _final_claims_propose_edit_occurred(final_response: str) -> bool:
     )
 
 
+def _final_claims_test_results(final_response: str) -> bool:
+    """True when FINAL text asserts test/pytest outcomes without bash evidence."""
+
+    if _FINAL_NEGATES_TEST_CLAIM.search(final_response):
+        return False
+    return any(
+        pattern.search(final_response) for pattern in _FINAL_CLAIMS_TEST_RESULTS_PATTERNS
+    )
+
+
 def _resolve_finish_final_response(
     action: AgentAction,
     raw_text: str,
     *,
     propose_edit_occurred: bool = False,
+    bash_occurred: bool = False,
 ) -> str:
     """Return the model FINAL summary, or a safe fallback when it is missing or untruthful."""
 
@@ -540,7 +602,60 @@ def _resolve_finish_final_response(
         return _FINISH_WITHOUT_FINAL_FALLBACK
     if not propose_edit_occurred and _final_claims_propose_edit_occurred(candidate):
         return _FINISH_FALSE_PROPOSE_EDIT_CLAIM_FALLBACK
+    if not bash_occurred and _final_claims_test_results(candidate):
+        return _FINISH_FALSE_TEST_CLAIM_FALLBACK
     return candidate
+
+
+def _normalize_trace_path(path: str) -> str:
+    return path.strip().replace("\\", "/").lstrip("./")
+
+
+def _path_from_action_detail(detail: str) -> str | None:
+    if not detail.startswith("PATH:"):
+        return None
+    return detail[5:].split("|", 1)[0].strip()
+
+
+def _read_file_step_succeeded(observation: str | None) -> bool:
+    if not observation:
+        return False
+    lower = observation.lower()
+    if not lower.startswith("read_file:"):
+        return False
+    failure_markers = (
+        "read blocked",
+        "file not found",
+        "path is not a file",
+        "not valid utf-8",
+        "path is outside the project root",
+    )
+    return not any(marker in lower for marker in failure_markers)
+
+
+def _observed_file_paths(step_records: list[AgentStepRecord]) -> set[str]:
+    paths: set[str] = set()
+    for record in step_records:
+        if record.action != "read_file":
+            continue
+        if not _read_file_step_succeeded(record.observation):
+            continue
+        path = _path_from_action_detail(record.action_detail)
+        if path:
+            paths.add(_normalize_trace_path(path))
+    return paths
+
+
+def _propose_edit_trace_error(
+    action: AgentAction,
+    step_records: list[AgentStepRecord],
+) -> str | None:
+    target = _normalize_trace_path(action.params.get("path", ""))
+    if not target:
+        return None
+    if target in _observed_file_paths(step_records):
+        return None
+    return _PROPOSE_EDIT_NOT_READ_MESSAGE.format(path=target)
 
 
 def _format_action_detail(action: AgentAction) -> str:
