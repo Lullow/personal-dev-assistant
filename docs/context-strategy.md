@@ -70,3 +70,14 @@ recommended_next_step: "Ask coder agent to prepare a one-line partial edit."
 ```
 
 The main agent may keep the full sub-agent result in raw logs, but only the compact summary should be used for the next prompt.
+
+## Interactive Assistant v.2 session compaction
+
+Chat mode (`personal-dev-assistant chat`) maintains session state separately from the main agent loop:
+
+- **Preserved across compaction:** `current_file_path`, `current_file_content`, `pending_edit`, `last_review_summary`, `last_test_result`, and a rolling `context_summary`.
+- **Trimmed:** `action_history` — older command summaries are folded into `context_summary` when the user runs `compact context` or when history exceeds a character threshold (automatic compaction).
+- **Manual compaction** prints a short summary: actions before/after, kept session keys.
+- **Not LLM-driven:** compaction rules are deterministic; no API key required.
+
+This mirrors the same principle as tool observation compaction: keep what the user and assistant need for the next step, drop verbose history.

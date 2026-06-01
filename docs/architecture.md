@@ -1,22 +1,24 @@
 # Architecture
 
-Det här dokumentet beskriver den tänkta arkitekturen på hög nivå. Implementation kommer senare.
+Det här dokumentet beskriver arkitekturen på hög nivå för Personal Dev Assistant.
 
 ## Översikt
 
 ```text
 User
   |
+  +--> Interactive Assistant v.2 (chat)     [primär demo-väg, deterministisk]
+  +--> Deterministic demo runner             [alternativ one-shot demo]
+  +--> Experimental run-agent --llm          [valfri, API-nyckel]
+  |
   v
 Main Agent
   |
-  +--> Planner Agent
-  +--> Explorer Agent
-  +--> Coder Agent
-  +--> Reviewer/Safety Agent
+  +--> Planner / Explorer / Coder / Reviewer (MainAgent subagents)
+  +--> Interactive review subagents (chat: code reviewer, test agent, fix planner)
   |
   v
-Tools <--> Context Manager <--> Token Monitor
+Tools <--> Context compaction <--> Token Monitor
   |
   v
 Safety Checker
@@ -24,42 +26,48 @@ Safety Checker
 
 ## Main Agent
 
-Main agent är systemets samordnare. Den tar emot användarens uppgift, avgör vad som behöver göras och väljer om den ska svara direkt eller använda tools och sub-agenter.
+Main agent är systemets samordnare. Den tar emot användarens uppgift, avgör vad som behöver göras och väljer om den ska svara direkt eller använda tools och sub-agenter. Används i experimentellt `run-agent --llm`-läge.
 
-## Planner Agent
+## Interactive Assistant v.2 (chat)
 
-Planner agent hjälper till att bryta ner en större uppgift i mindre steg. Den ska kunna skapa en enkel plan innan systemet börjar läsa filer, köra kommandon eller föreslå ändringar.
+Primär presentationsväg — **ingen API-nyckel**.
 
-## Explorer Agent
+Paketet `src/personal_dev_assistant/interactive/`:
 
-Explorer agent undersöker projektet. Den kan på sikt lista filer, läsa relevanta filer och sammanfatta vad den hittar.
+| Modul | Roll |
+| --- | --- |
+| `session.py` | `InteractiveSession` — current file, pending edit, review, test result, action history |
+| `review.py` | Deterministiska review-subagents: code reviewer, test reasoning agent, fix planner |
+| `assistant.py` | Kommandoloop, tool-anrop, apply/reject, compaction |
+| `parsing.py` | Deterministisk command parser + natural phrases |
 
-## Coder Agent
+Typiskt flöde: `open` → `review` → `fix it` (pending edit) → `apply` (partial_edit) → `run tests`.
 
-Coder agent ansvarar för små kodändringar. Den ska arbeta försiktigt, göra begränsade ändringar och förklara varför ändringen behövs.
+## Planner / Explorer / Coder / Reviewer (MainAgent)
 
-## Reviewer/Safety Agent
-
-Reviewer/Safety agent granskar risker. Den ska kunna kontrollera föreslagna kommandon, potentiellt farliga filändringar och om planen verkar rimlig.
+Sub-agents för `MainAgent` (experimentellt LLM-läge och tester). Körs sekventiellt via `ACTION: subagents`. Chat v.2 använder egna deterministiska review-funktioner i stället.
 
 ## Tools
 
-Tools är funktioner som agenten kan använda för att interagera med systemet. Exempel på framtida tools:
+Implementerade tools:
 
-- Läsa filer.
-- Lista projektstruktur.
-- Köra säkra bash-kommandon.
-- Göra partiella filändringar.
-- Köra tester.
+- `read_file`, `list_project_files` — säker filinspektion
+- `bash` — godkända kommandon (t.ex. `pytest demo_project`)
+- `partial_edit` — exakt en gång-matchning med safety checks
+- `propose_edit` — validering + reviewer gate; apply endast explicit (`--apply-proposed-edits` eller chat `apply`)
 
-## Context Manager
+## Context compaction
 
-Context manager håller reda på vilken information som är relevant för agenten just nu. Den ska hjälpa till att undvika för mycket brus i prompten.
+Long tool/sub-agent output kompakteras innan nästa steg (`context/compaction.py`). Chat v.2 har dessutom session compaction via `compact context` (bevarar current file och pending edit).
 
 ## Token Monitor
 
-Token monitor håller koll på ungefärlig tokenanvändning och eventuell kostnad. Den ska kunna varna när budgeten börjar ta slut och stoppa körningen vid hard cap.
+`TokenBudgetMonitor` spårar ungefärlig tokenanvändning, varningar och hard cap. Chat v.2 visar deterministiska session-estimat via `show token usage`.
 
 ## Safety Checker
 
-Safety checker kontrollerar riskabla operationer innan de körs. Den ska särskilt hantera bash-kommandon och filändringar som kan vara destruktiva.
+Safety checker kontrollerar riskabla operationer innan de körs — bash-kommandon, blockerade paths, filändringar. Experimentellt LLM-läge blockerar direkt `partial_edit`; trace-grounded guards förhindrar falska FINAL-påståenden.
+
+## Experimentellt LLM-läge (valfritt)
+
+`personal-dev-assistant run-agent "..." --llm` — riktig `MainAgent` + OpenAI-kompatibel client. Tillåtna actions: `read_file`, `list_project_files`, `bash`, `propose_edit`, `finish`. Reviewer gate på `propose_edit`; apply via `--apply-proposed-edits` (low/medium risk only).

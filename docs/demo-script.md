@@ -2,7 +2,7 @@
 
 Use this script during the VG presentation. It is honest about scope: this is a **school-sized** terminal assistant, not a full Claude Code replacement.
 
-**Recommended path:** run the **deterministic demo** (no API key) or **`personal-dev-assistant chat`**. Optional: **`run-agent --llm`** for experimental live LLM use with API key — not the primary demo route.
+**Recommended path:** run **`personal-dev-assistant chat`** (Interactive Assistant v.2, no API key). Alternative: **deterministic demo runner** (one-shot script). Optional: **`run-agent --llm`** for experimental live LLM use with API key — not the primary demo route.
 
 Estimated time: **8–12 minutes**.
 
@@ -87,7 +87,7 @@ pip install -e ".[dev]"
 python -m pytest tests
 ```
 
-Expected: **153 passed**.
+Expected: **294 passed**.
 
 **Run deterministic demo (main presentation):**
 
@@ -224,32 +224,58 @@ Exit code **0** = success.
 
 ---
 
-## 8b. Optional interactive terminal mode
+## 8b. Interactive Assistant v.2 (primary live demo)
+
+**Start here for the VG presentation** — no API key required.
 
 ```bash
 personal-dev-assistant chat
 ```
 
-Suggested flow (canonical or natural phrases both work):
+### Recommended v.2 flow
 
 ```text
 > open demo_project/calculator.py
+> review it
+> fix it
+> apply
 > run tests
-> fix the bug
-> budget
-> quit
+> show token usage
+> compact context
+> exit
 ```
 
-Say clearly: **deterministic command-driven MVP**, not free-form LLM chat. Natural phrases like `show files`, `run pytest`, and `repair it` are mapped to the same safe commands — no LLM parsing. The `fix` command shows MAIN AGENT → PLANNER → EXPLORER → CODER → REVIEWER → PARTIAL_EDIT → BASH with real safe tools.
+**Narrate while typing:**
 
-Optional follow-up with API key:
+1. **open** — safe read; sets current file in session state.
+2. **review it** — main assistant delegates to deterministic **code reviewer**, **test reasoning agent**, and **fix planner**; explains `add()` subtracts instead of adds.
+3. **fix it** — creates **pending proposed edit** + **mini diff**; file **not** changed yet (`propose_edit` validation + reviewer gate).
+4. **apply** — user explicitly approves; **`partial_edit`** applies `return a - b` → `return a + b`.
+5. **run tests** — safe `pytest demo_project`; tests pass.
+6. **show token usage** — session budget / local estimate.
+7. **compact context** — trims action history; keeps current file and pending-edit summary.
+
+**Restore** `demo_project/calculator.py` to `return a - b` after the demo if you want to repeat.
+
+Say clearly: **deterministic, stateful session** — not free-form LLM chat. Natural phrases map to the same safe commands.
+
+### Alternative: one-shot deterministic demo
 
 ```bash
-export OPENAI_API_KEY=your-key-here
-personal-dev-assistant run-agent "List demo_project, run pytest, propose a fix" --llm
+python -m personal_dev_assistant.demo.runner
 ```
 
-Point out labeled sections in output: **AGENT TRACE**, **TOKEN BUDGET**, **FINAL ANSWER**. Mention `--apply-proposed-edits` only if you want to show a real apply (low/medium risk only).
+Same bug/fix story without step-by-step user commands. Good backup if short on time.
+
+### Optional: experimental LLM mode
+
+```bash
+export OPENAI_API_KEY=your-openrouter-key-here
+export OPENAI_BASE_URL=https://openrouter.ai/api/v1
+personal-dev-assistant run-agent "Inspect demo_project, run pytest, and propose a fix for the failing test" --llm
+```
+
+Point out **AGENT TRACE**, trace-grounded guards (no false test/edit claims), and **reviewer gate**. Mention `--apply-proposed-edits` only for low/medium-risk apply demo. **High-risk edits stay blocked.** Not required for VG.
 
 ---
 
@@ -258,7 +284,7 @@ Point out labeled sections in output: **AGENT TRACE**, **TOKEN BUDGET**, **FINAL
 - **Clear scope** — small, understandable demo project.
 - **Safety first** — commands and paths checked before tools run.
 - **Honest architecture** — main agent, sub-agents, tools, context, budget are separate layers.
-- **Tested** — 180 automated tests including safety, tools, agents, sub-agents, interactive mode, and experimental run-agent.
+- **Tested** — 294 automated tests including safety, tools, agents, interactive v.2, and experimental run-agent.
 - **Repeatable** — deterministic demo; Docker for another machine; no API key for demo.
 - **Documentation** — requirements, architecture, safety, dev log, README.
 
@@ -267,47 +293,55 @@ Point out labeled sections in output: **AGENT TRACE**, **TOKEN BUDGET**, **FINAL
 ## 10. Weaknesses / limitations (say these proactively)
 
 - **Not a production Claude Code replacement** — limited to small, local workflows.
-- **Deterministic demo and chat are scripted** — safest for presentation; not free-form LLM sessions.
-- **Experimental LLM mode is optional** — requires API key; shows step-by-step trace (`[LLM DECISION]`, `[TOOL RESULT]`, `[REVIEWER]`); `chat`/demo remain primary paths.
+- **Deterministic chat v.2 is the primary demo** — stateful session with pending edits and explicit `apply`; not free-form LLM.
+- **Experimental LLM mode is optional** — requires API key; trace-grounded guards; reviewer gate; `chat`/demo remain primary paths.
 - **Sub-agents are sequential** — no parallel execution.
 - **Small demo only** — one intentional bug, one-line fix; not large refactors.
 - **LLM demo needs API key + network** — separated via env vars; not required for VG live demo.
 
 ---
 
-## 11. Likely teacher questions and short answers
+## 11. Frågor jag kan få under redovisningen
 
-**Q: Is this really multi-agent?**  
-A: Yes. `MainAgent` can delegate to `planner`, `explorer`, `coder`, and `reviewer` via `ACTION: subagents`. Sub-agents return compact `AgentResult` objects. Covered by integration tests; live demo focuses on the tool workflow.
+Korta svar jag kan använda om jag blir osäker — fakta är desamma, men formuleringen är min egen.
 
-**Q: How do you prevent harmful commands?**  
-A: A safety checker classifies commands as safe, risky (needs confirmation), or blocked. Tools call it before execution. Destructive commands like `rm -rf` and paths like `.env` are blocked.
+**F: Är det verkligen multi-agent?**  
+**Jag kan svara ungefär så här:** Ja. I experimentellt läge kan `MainAgent` anropa `planner`, `explorer`, `coder` och `reviewer` via `ACTION: subagents`. I `chat` v.2 visar jag deterministiska review-subagents (code reviewer, test agent, fix planner) som main assistant sammanfattar. Live-demo fokuserar på det tydliga verktygsflödet.
 
-**Q: How do you handle long tool output?**  
-A: Deterministic compaction truncates long output and keeps start/end plus metadata. Sub-agent summaries have a separate size limit in config.
+**F: Hur stoppar ni farliga kommandon?**  
+**Jag kan svara ungefär så här:** En safety checker körs innan tools. Destruktiva kommandon som `rm -rf` blockeras, och känsliga paths som `.env` får inte läsas eller ändras. Samma regler gäller i demo, chat och experimentellt LLM-läge.
 
-**Q: How is token/cost monitoring done?**  
-A: `TokenBudgetMonitor` tracks approximate tokens per LLM call, warns near threshold, and stops at hard cap. Wired through `ChatClient`; tested with mock client.
+**F: Hur hanterar ni lång tool-output / context?**  
+**Jag kan svara ungefär så här:** Långa observationer kompakteras deterministiskt (start + slut + metadata). I chat v.2 kan jag köra `compact context` så att viktig session state (current file, pending edit) behålls men action history trimmas.
 
-**Q: Why not demo the LLM live?**  
-A: Deterministic demo is reliable offline and needs no API key. LLM behavior is tested with scripted clients; secrets stay in env vars, not in the repo or Docker image.
+**F: Hur funkar token- och kostnadsspårning?**  
+**Jag kan svara ungefär så här:** `TokenBudgetMonitor` räknar ungefärliga tokens, varnar nära gränsen och stoppar vid hard cap. I chat visar `show token usage` sessionens budget — deterministiska uppskattningar utan API-nyckel. Vid riktig LLM går det via `ChatClient`.
 
-**Q: Can someone else run it easily?**  
-A: Yes. README has venv steps; Docker runs tests and demo with documented commands. No secrets baked into the image.
+**F: Varför inte live-LLM som huvuddemo?**  
+**Jag kan svara ungefär så här:** `personal-dev-assistant chat` och demo runner är stabila offline och behöver ingen nyckel. Experimentellt `run-agent --llm` finns för den som vill visa riktig modell — men det är extra, inte krav för VG.
 
-**Q: What would you improve next?**  
-A: Wire interactive CLI to `MainAgent`, optional live LLM demo, parallel sub-agents, and broader project support — outside current scope.
+**F: Vilket LLM använder ni i experimentellt läge?**  
+**Jag kan svara ungefär så här:** OpenAI-kompatibel client med `OPENAI_API_KEY` och `OPENAI_BASE_URL=https://openrouter.ai/api/v1`. Standardmodell i `config.yaml` är `openai/gpt-5.1-codex-mini`. Hemligheter ligger i `.env`, inte i repot.
+
+**F: Kan någon annan köra projektet enkelt?**  
+**Jag kan svara ungefär så här:** Ja — README har venv-steg, och Docker kör tester och demo utan inbakad API-nyckel. `pip install -e ".[dev]"` och `pytest tests` räcker lokalt.
+
+**F: Vad skulle du förbättra härnäst?**  
+**Jag kan svara ungefär så här:** Mer generell review utöver demo-buggen, eventuellt live-LLM i chat, parallella subagents — medvetet utanför nuvarande scope. v.2 chat är redan min primära produktlika demo-väg.
 
 ---
 
-## 12. Suggested presentation order
+## 12. Min föreslagna presentationsordning
 
-1. Pitch + problem (30 s)
-2. Architecture diagram (1 min)
-3. VG requirements table — quick scan (1 min)
-4. `pytest tests` — 153 passed (1 min)
-5. Deterministic demo — local or Docker (3–4 min)
-6. Strengths + limitations — honest close (1 min)
-7. Q&A — use section 11
+Det här är ordningen jag själv följer — hellre lugn och tydlig än att stressa igenom allt.
 
-Good luck.
+1. **Kort pitch + problem** (ca 30 s) — vad projektet gör och varför safety/context spelar roll.
+2. **Arkitektur** (ca 1 min) — peka på `docs/architecture.md` eller skissa User → chat/demo/LLM → tools → safety.
+3. **VG-krav** (ca 1 min) — snabb genomgång av tabellen i detta script eller `docs/requirements.md`.
+4. **`pytest tests`** (ca 1 min) — visa **294 passed** för trovärdighet.
+5. **`personal-dev-assistant chat`** (ca 4–5 min) — **huvuddemo**: open → review → fix → apply → run tests → token usage → compact → exit.
+6. **Valfritt** (ca 1–2 min) — `demo.runner` one-shot eller kort `run-agent --llm` om tid och nyckel finns.
+7. **Styrkor + begränsningar** (ca 1 min) — säg proaktivt vad som *inte* är Claude Code (sektion 10).
+8. **Frågor** — använd sektion 11 om något dyker upp.
+
+Kom ihåg: visa hellre ett stabilt och tydligt flöde än att försöka visa allt.
