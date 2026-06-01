@@ -578,6 +578,122 @@ YYYY-MM-DD
 
 - Förbättra finish-hantering när modellen utelämnar en användbar FINAL-sammanfattning.
 
+### 2026-06-01 - Experimental finish fallback handling
+
+#### Vad som implementerades
+
+- Stärkte experimentellt ACTION protocol så `ACTION: finish` ska inkludera `FINAL`.
+- Lade till säker fallback-final response när modellen returnerar en tom eller värdelös finish, t.ex. endast `ACTION: finish`.
+- Bevarade korrekta modell-FINAL-sammanfattningar när de finns.
+- Safety checks försvagades inte.
+- Direkt `partial_edit` från experimentellt LLM-läge förblir blockerad.
+- Subagents förblir inaktiverade i experimentellt LLM-läge.
+
+#### Tester
+
+- Kördes: `./.venv/bin/python -m pytest tests`
+- Resultat: 272 passed.
+
+#### Begränsning / nästa steg
+
+- Fortsätt förbättra action-format-robusthet och trace-grounding.
+
+### 2026-06-01 - Guard against false propose_edit claims
+
+#### Vad som implementerades
+
+- Lade till truthfulness guard för experimentella finish-sammanfattningar.
+- Om `FINAL` hävdar att en proposed edit skickades in, granskades, risk-klassificerades, applicerades eller inte applicerades, men ingen `ACTION: propose_edit` förekom i körningen, ersätts svaret med en sanningsenlig fallback.
+- Guard ändrar endast final text; den kör inte verktyg, skapar inte edits och applicerar inte filer.
+- Faktiska `propose_edit`-flöden accepteras fortfarande när `ACTION: propose_edit` kördes.
+- Stärkte protocol-text så modellen inte får hitta på reviewer-/risk-/apply-status.
+
+#### Produktnytta
+
+- Slutsvar är mer trace-grounded och kan inte hävda actions som inte skedde.
+
+#### Tester
+
+- Kördes: `./.venv/bin/python -m pytest tests`
+- Resultat: 275 passed.
+
+#### Begränsning / nästa steg
+
+- Fortsätt förbättra trace-grounding för testresultat och filinläsning före `propose_edit`.
+
+### 2026-06-01 - Trace-grounded experimental LLM workflow
+
+#### Vad som implementerades
+
+- Lade till striktare trace-grounding för experimentellt LLM-läge.
+- Modellen får inte hävda att tester failade/passerade eller nämna pytest-resultat om inte `ACTION: bash` faktiskt kördes och gav testoutput.
+- `ACTION: propose_edit` blockeras i experimentellt läge om målfilen inte först lästs med `ACTION: read_file` i samma körning.
+- Blocket ger en observation som säger åt modellen att läsa filen först; ingen auto-edit eller auto-apply.
+- Lade till fallback för final-sammanfattningar som hävdar testresultat utan bash-action.
+- Verifierade med live OpenRouter/OpenAI-kompatibla smoke tests:
+  `personal-dev-assistant run-agent "Inspect demo_project, run pytest, and propose a fix for the failing test" --llm`
+- Observerat korrekt trace:
+  `list_project_files` → `bash pytest demo_project` → `read_file demo_project/calculator.py` → `propose_edit` → `finish`
+- Verifierade även `--apply-proposed-edits`-vägen som applicerar low-risk reviewed edit via `partial_edit`.
+- Återställde `demo_project/calculator.py` efter apply smoke test så demon förblir repeterbar.
+
+#### Tester
+
+- Kördes: `./.venv/bin/python -m pytest tests`
+- Resultat: 280 passed.
+
+#### Begränsning / nästa steg
+
+- Experimentellt LLM-läge är fortfarande valfritt och mindre deterministiskt än chat/demo; primär demo förblir deterministisk.
+
+### 2026-06-01 - Interactive Assistant v.2 session workflow
+
+#### Vad som implementerades
+
+- Refaktorerade interaktivt läge från en enda `interactive.py` till paketet `interactive/`:
+  - `assistant.py`
+  - `parsing.py`
+  - `review.py`
+  - `session.py`
+  - `__init__.py`
+- Förbättrade `personal-dev-assistant chat` till Interactive Assistant v.2.
+- Lade till stateful `InteractiveSession` med spårning av:
+  - `current_file_path`
+  - `current_file_content`
+  - `last_review_summary`
+  - `pending_edit`
+  - `last_test_result`
+  - `context_summary`
+  - `action_history`
+- Lade till deterministisk multi-agent-style review:
+  - code reviewer
+  - test reasoning agent
+  - fix planner
+- `review it` delegerar till dessa deterministiska subagents; main assistant kombinerar output.
+- `fix it` skapar pending proposed edit och mini diff, men modifierar inte filer.
+- `apply` ändrar filer endast efter explicit användarkommando och använder befintliga `partial_edit` safety path.
+- `reject` rensar pending edit utan att ändra filer.
+- `run tests` använder säkert bash-kommando `pytest demo_project` för demo_project.
+- `show token usage` visar deterministisk lokal/session budget-estimat.
+- `compact context` bevarar viktig session state och trimmar action history.
+- Lade till natural commands som `show current file`, `review this file`, `fix it`, `apply`, `reject`, `compact context`.
+- Verifierade v.2 demo-flöde:
+  `open demo_project/calculator.py` → `review it` → `fix it` → `apply` → `run tests` → `show token usage` → `compact context` → `exit`
+- Demon applicerade `return a - b` → `return a + b`, `pytest demo_project` passerade, därefter återställdes `demo_project/calculator.py`.
+
+#### Produktnytta
+
+- Deterministisk chat är nu den primära produktlika demo-vägen med session state, subagents, säkra proposed edits, användargodkännande, token monitoring och context compaction.
+
+#### Tester
+
+- Kördes: `./.venv/bin/python -m pytest tests`
+- Resultat: 294 passed.
+
+#### Begränsning / nästa steg
+
+- v.2 review är fortfarande deterministisk och demo-pattern-fokuserad, inte en fullständig general Claude Code-klon.
+
 ### YYYY-MM-DD
 
 ### Vad jag gjorde
