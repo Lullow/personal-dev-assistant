@@ -432,6 +432,35 @@ YYYY-MM-DD
 
 - Free-form LLM-chat är fortfarande experimentell och separat från deterministiskt interaktivt läge (`run-agent --llm`).
 
+### 2026-05-30 - Reviewer gate for proposed edits
+
+#### Vad som implementerades
+
+- Lade till deterministisk reviewer gate för experimentella `propose_edit`-förslag (`propose_edit_review.py`).
+- Klassificerar föreslagna edits som **low**, **medium** eller **high** risk.
+- **Low** risk för små, fokuserade edits i demo-/testpaths (t.ex. `demo_project/`, `tests/`, `test_*.py`, `*_test.py`).
+- **Medium/high** risk för bredare replacements eller edits utanför demo-/testpaths.
+- **High-risk** edits blockeras även med `--apply-proposed-edits`.
+- Endast **low** och **medium** risk kan appliceras när apply-flaggan är satt.
+- Output inkluderar `risk_level`, `reviewer_summary`, `recommendation`, `valid`, `applied` och `mini_diff`.
+- Faktiska filändringar går fortfarande endast via `partial_edit` — ingen bypass.
+- Direkt `partial_edit` från LLM förblir blockerad i experimentellt läge; subagents förblir inaktiverade.
+- Lade till `tests/test_propose_edit_review.py` och utökade `tests/test_propose_edit.py` / `tests/test_run_agent.py`.
+- Uppdaterade `README.md` och `docs/safety-policy.md`.
+
+#### Produkt- och säkerhetsnytta
+
+- LLM kan föreslå ändringar med tydlig riskbedömning innan något skrivs till disk; automatisk apply är begränsad till säkrare förslag.
+
+#### Tester
+
+- Kördes: `./.venv/bin/python -m pytest tests`
+- Resultat: 243 passed.
+
+#### Begränsning / nästa steg
+
+- Förbättra strukturerat response-format, t.ex. JSON schema, eller lägg till sub-agent reviewer-godkännande i experimentellt LLM-läge.
+
 ### YYYY-MM-DD
 
 ### Vad jag gjorde
