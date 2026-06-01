@@ -461,6 +461,32 @@ YYYY-MM-DD
 
 - Förbättra strukturerat response-format, t.ex. JSON schema, eller lägg till sub-agent reviewer-godkännande i experimentellt LLM-läge.
 
+### 2026-05-30 - Experimental LLM agent trace output
+
+#### Vad som implementerades
+
+- Förbättrade terminaloutput för experimentellt `run-agent`-läge (`format_experimental_output` i `run_agent.py`).
+- Lade till tydlig sektion **AGENT TRACE** med steg-för-steg-spårning (`AgentStepRecord` i `MainAgent`).
+- Visar `[LLM DECISION]`, `[TOOL RESULT]`, `[SAFETY]`, `[REVIEWER]`, token budget, körningssammanfattning och **FINAL ANSWER**.
+- Deterministisk `chat` och demo förblir primära presentationsvägar.
+- Safety checks försvagades inte; direkt `partial_edit` från LLM förblir blockerad.
+- Föreslagna edits går fortfarande via `propose_edit` och reviewer gate.
+- Utökade tester i `tests/test_run_agent.py` (scripted/mock clients).
+- Uppdaterade `README.md` och `docs/demo-script.md`.
+
+#### Produktnytta
+
+- Experimentellt LLM-läge är lättare att förstå och närmare en riktig LLM-driven agent-loop vid demonstration.
+
+#### Tester
+
+- Kördes: `./.venv/bin/python -m pytest tests`
+- Resultat: 246 passed.
+
+#### Begränsning / nästa steg
+
+- Testa mot riktig API-nyckel/modell och förbättra action-format-robusthet vid behov (t.ex. JSON schema).
+
 ### YYYY-MM-DD
 
 ### Vad jag gjorde
