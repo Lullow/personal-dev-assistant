@@ -1,11 +1,21 @@
+"""Shared pytest fixtures and helpers."""
+
 from __future__ import annotations
 
-import sys
-from pathlib import Path
+import pytest
+
+OPENAI_ENV_VARS = ("OPENAI_API_KEY", "OPENAI_BASE_URL")
 
 
-ROOT = Path(__file__).resolve().parents[1]
-SRC = ROOT / "src"
+def clear_openai_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Remove OpenAI/OpenRouter env vars so tests do not inherit the developer shell."""
 
-if str(SRC) not in sys.path:
-    sys.path.insert(0, str(SRC))
+    for name in OPENAI_ENV_VARS:
+        monkeypatch.delenv(name, raising=False)
+
+
+@pytest.fixture
+def isolated_openai_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ensure OPENAI_API_KEY and OPENAI_BASE_URL are unset for this test."""
+
+    clear_openai_env(monkeypatch)

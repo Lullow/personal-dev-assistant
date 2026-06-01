@@ -20,6 +20,7 @@ from personal_dev_assistant.run_agent import (
     run_experimental_llm_agent,
 )
 from personal_dev_assistant.cli import main as cli_main
+from tests.conftest import clear_openai_env
 from tests.test_main_agent import ScriptedChatClient
 
 
@@ -288,6 +289,7 @@ def test_cli_run_agent_requires_llm_flag(tmp_path, monkeypatch):
 
 
 def test_cli_run_agent_missing_api_key_returns_error(tmp_path, monkeypatch):
+    clear_openai_env(monkeypatch)
     monkeypatch.chdir(tmp_path)
     exit_code = cli_main(["run-agent", "Inspect demo_project", "--llm"])
     assert exit_code == 2

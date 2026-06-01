@@ -33,6 +33,9 @@ class ToolsConfig:
     test_command: str = "pytest"
 
 
+DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1"
+
+
 @dataclass(frozen=True)
 class AppConfig:
     model: str = "gpt-4o-mini"
@@ -45,10 +48,17 @@ class AppConfig:
 @dataclass(frozen=True)
 class EnvironmentConfig:
     openai_api_key: str | None = None
+    openai_base_url: str | None = None
 
     @property
     def has_openai_api_key(self) -> bool:
         return bool(self.openai_api_key)
+
+    @property
+    def effective_openai_base_url(self) -> str:
+        """OpenAI-compatible API base URL (no trailing slash)."""
+
+        return resolve_openai_base_url(self.openai_base_url)
 
 
 @dataclass(frozen=True)
@@ -65,7 +75,10 @@ def load_runtime_config(
 
     env = os.environ if environ is None else environ
     app_config = load_app_config(config_path=config_path, environ=env)
-    environment = EnvironmentConfig(openai_api_key=_blank_to_none(env.get("OPENAI_API_KEY")))
+    environment = EnvironmentConfig(
+        openai_api_key=_blank_to_none(env.get("OPENAI_API_KEY")),
+        openai_base_url=_blank_to_none(env.get("OPENAI_BASE_URL")),
+    )
     return RuntimeConfig(app=app_config, environment=environment)
 
 
@@ -294,3 +307,10 @@ def _blank_to_none(value: str | None) -> str | None:
         return None
     value = value.strip()
     return value or None
+
+
+def resolve_openai_base_url(base_url: str | None) -> str:
+    """Return normalized OpenAI-compatible API base URL without trailing slash."""
+
+    resolved = base_url.strip() if base_url else DEFAULT_OPENAI_BASE_URL
+    return resolved.rstrip("/")

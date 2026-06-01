@@ -4,7 +4,13 @@ import textwrap
 
 import pytest
 
-from personal_dev_assistant.config import AppConfig, load_app_config, load_runtime_config
+from personal_dev_assistant.config import (
+    AppConfig,
+    DEFAULT_OPENAI_BASE_URL,
+    load_app_config,
+    load_runtime_config,
+    resolve_openai_base_url,
+)
 
 
 def test_load_app_config_reads_config_yaml(tmp_path):
@@ -70,7 +76,9 @@ def test_load_app_config_applies_environment_overrides(tmp_path):
     assert config.context.max_observation_chars == 321
 
 
-def test_load_runtime_config_reads_secret_environment_without_requiring_api_call(tmp_path):
+def test_load_runtime_config_reads_secret_environment_without_requiring_api_call(
+    tmp_path, isolated_openai_env
+):
     runtime = load_runtime_config(
         tmp_path / "missing.yaml",
         environ={"OPENAI_API_KEY": "test-key"},
@@ -78,6 +86,31 @@ def test_load_runtime_config_reads_secret_environment_without_requiring_api_call
 
     assert runtime.environment.has_openai_api_key is True
     assert runtime.environment.openai_api_key == "test-key"
+
+
+def test_load_runtime_config_reads_openai_base_url(tmp_path):
+    runtime = load_runtime_config(
+        tmp_path / "missing.yaml",
+        environ={
+            "OPENAI_API_KEY": "test-key",
+            "OPENAI_BASE_URL": "https://openrouter.ai/api/v1",
+        },
+    )
+
+    assert runtime.environment.openai_base_url == "https://openrouter.ai/api/v1"
+    assert runtime.environment.effective_openai_base_url == "https://openrouter.ai/api/v1"
+
+
+def test_resolve_openai_base_url_defaults_to_openai(isolated_openai_env):
+    assert resolve_openai_base_url(None) == DEFAULT_OPENAI_BASE_URL
+    assert resolve_openai_base_url("") == DEFAULT_OPENAI_BASE_URL
+
+
+def test_resolve_openai_base_url_strips_trailing_slash():
+    assert (
+        resolve_openai_base_url("https://openrouter.ai/api/v1/")
+        == "https://openrouter.ai/api/v1"
+    )
 
 
 def test_load_app_config_rejects_invalid_values(tmp_path):

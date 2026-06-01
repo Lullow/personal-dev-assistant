@@ -10,7 +10,13 @@ from dataclasses import dataclass
 from typing import Any, Mapping
 
 from personal_dev_assistant.budget import TokenBudgetMonitor
-from personal_dev_assistant.config import AppConfig, EnvironmentConfig, RuntimeConfig
+from personal_dev_assistant.config import (
+    AppConfig,
+    DEFAULT_OPENAI_BASE_URL,
+    EnvironmentConfig,
+    RuntimeConfig,
+    resolve_openai_base_url,
+)
 from personal_dev_assistant.models import TokenUsage
 
 
@@ -92,11 +98,18 @@ class OpenAIChatClient(ChatClient):
         app_config: AppConfig,
         environment: EnvironmentConfig,
         budget_monitor: TokenBudgetMonitor,
-        base_url: str = "https://api.openai.com/v1",
+        base_url: str | None = None,
     ) -> None:
         super().__init__(model=app_config.model, budget_monitor=budget_monitor)
         self._api_key = environment.openai_api_key
-        self._base_url = base_url.rstrip("/")
+        if base_url is not None:
+            self._base_url = resolve_openai_base_url(base_url)
+        else:
+            self._base_url = environment.effective_openai_base_url
+
+    @property
+    def chat_completions_url(self) -> str:
+        return f"{self._base_url}/chat/completions"
 
     def _complete(self, messages: list[Mapping[str, str]]) -> LLMResponse:
         if not self._api_key:
@@ -110,7 +123,7 @@ class OpenAIChatClient(ChatClient):
             "messages": [dict(message) for message in messages],
         }
         request = urllib.request.Request(
-            f"{self._base_url}/chat/completions",
+            self.chat_completions_url,
             data=json.dumps(payload).encode("utf-8"),
             headers={
                 "Authorization": f"Bearer {self._api_key}",
