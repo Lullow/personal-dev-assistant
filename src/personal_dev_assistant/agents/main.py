@@ -322,7 +322,20 @@ def _compact_tool_observation(
 ) -> str:
     parts = [f"{tool_name}: {result.summary}"]
 
-    for key in ("path", "stdout", "stderr", "content", "files", "mini_diff", "apply_hint"):
+    for key in (
+        "path",
+        "stdout",
+        "stderr",
+        "content",
+        "files",
+        "mini_diff",
+        "apply_hint",
+        "risk_level",
+        "reviewer_summary",
+        "recommendation",
+        "valid",
+        "applied",
+    ):
         if key not in result.output:
             continue
         value = result.output[key]

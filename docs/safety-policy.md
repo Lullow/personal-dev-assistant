@@ -95,5 +95,7 @@ Default behavior is **non-destructive**:
 - Proposals are validated with the same path and text rules as `partial_edit`.
 - Files are **not modified** unless the user runs with `--apply-proposed-edits`.
 - When applying is enabled, the system still routes through `partial_edit` — no raw writes or bypass.
+- A deterministic **reviewer gate** classifies each proposal as low, medium, or high risk.
+- Only **low** and **medium** risk proposals can be applied, even with `--apply-proposed-edits`; **high** risk proposals are never auto-applied.
 
 Invalid proposals (missing fields, blocked paths, empty `OLD_TEXT`, duplicate matches, no-op edits) are rejected with a clear observation. Malformed `propose_edit` responses stop the agent safely.

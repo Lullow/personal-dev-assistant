@@ -36,7 +36,7 @@ The included demo project (`demo_project/`) contains an intentional bug in `calc
 | LLM-backed free-form chat | **Not implemented** |
 | Docker packaging | Implemented |
 
-**220 tests** currently pass.
+**229 tests** currently pass.
 
 For implementation history, see [`docs/development-log.md`](docs/development-log.md).
 
@@ -367,25 +367,27 @@ short reason
 When a proposal is received, the system:
 
 - validates the path (same rules as `partial_edit`)
+- runs a deterministic reviewer gate (`risk_level`: low / medium / high)
 - requires non-empty `OLD_TEXT` that appears exactly once in the file
 - rejects no-op edits, blocked paths, and binary/non-UTF-8 files
-- returns a compact observation with a mini diff when valid
+- returns a compact observation with `reviewer_summary`, `recommendation`, and a mini diff when valid
 - tells you how to apply the edit safely if you choose to
 
-**By default, nothing is written.** To actually apply validated proposals, opt in explicitly:
+**By default, nothing is written.** To apply validated proposals, opt in explicitly:
 
 ```bash
 personal-dev-assistant run-agent "Fix the calculator bug" --llm --apply-proposed-edits
 ```
 
-With `--apply-proposed-edits`, valid proposals are applied through the existing `partial_edit` tool (same safety checks; no bypass). Without the flag, you can review the mini diff in the agent output first.
+With `--apply-proposed-edits`, only **low** and **medium** risk proposals are applied through the existing `partial_edit` tool (same safety checks; no bypass). **High** risk proposals are reviewed but never auto-applied. Without the flag, you can review the mini diff and reviewer output first.
 
 Example output starts with:
 
 ```text
 *** EXPERIMENTAL LLM AGENT MODE ***
 Optional live LLM path — not the primary demo route.
-Proposed edits are validated by default and not applied unless --apply-proposed-edits is set.
+Proposed edits are validated and reviewed by default; only low/medium-risk proposals
+can be applied with --apply-proposed-edits. High-risk proposals are never auto-applied.
 ```
 
 ## Project layout

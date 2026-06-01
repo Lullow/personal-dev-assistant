@@ -19,7 +19,8 @@ EXPERIMENTAL_BANNER = """
 *** EXPERIMENTAL LLM AGENT MODE ***
 Optional live LLM path — not the primary demo route.
 Requires OPENAI_API_KEY. Uses MainAgent with safe read/list/bash/propose_edit/finish.
-Proposed edits are validated by default and not applied unless --apply-proposed-edits is set.
+Proposed edits are validated and reviewed by default; only low/medium-risk proposals
+can be applied with --apply-proposed-edits (via partial_edit). High-risk proposals are never auto-applied.
 partial_edit and subagents remain disabled for direct LLM use.
 """.strip()
 

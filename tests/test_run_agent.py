@@ -226,12 +226,18 @@ def test_parse_propose_edit_multiline_format():
 
 
 def test_experimental_propose_edit_valid_but_not_applied_by_default(tmp_path):
-    target = tmp_path / "demo.py"
+    demo_dir = tmp_path / "demo_project"
+    demo_dir.mkdir()
+    target = demo_dir / "calculator.py"
     target.write_text("return a - b\n", encoding="utf-8")
     agent = _experimental_agent(
         tmp_path,
         [
-            _propose_edit_response("demo.py", "return a - b", "return a + b"),
+            _propose_edit_response(
+                "demo_project/calculator.py",
+                "return a - b",
+                "return a + b",
+            ),
             "ACTION: finish\nFINAL: Proposed fix.",
         ],
     )
@@ -241,16 +247,25 @@ def test_experimental_propose_edit_valid_but_not_applied_by_default(tmp_path):
     assert result.stopped_reason == "finish"
     assert target.read_text(encoding="utf-8") == "return a - b\n"
     assert any("not applied" in observation.lower() for observation in result.observations)
-    assert any("mini_diff" in observation or "- return a - b" in observation for observation in result.observations)
+    assert any(
+        "risk_level" in observation or "reviewer_summary" in observation
+        for observation in result.observations
+    )
 
 
 def test_experimental_propose_edit_applied_with_apply_flag(tmp_path):
-    target = tmp_path / "demo.py"
+    demo_dir = tmp_path / "demo_project"
+    demo_dir.mkdir()
+    target = demo_dir / "calculator.py"
     target.write_text("return a - b\n", encoding="utf-8")
     agent = _experimental_agent(
         tmp_path,
         [
-            _propose_edit_response("demo.py", "return a - b", "return a + b"),
+            _propose_edit_response(
+                "demo_project/calculator.py",
+                "return a - b",
+                "return a + b",
+            ),
             "ACTION: finish\nFINAL: Applied fix.",
         ],
         apply_proposed_edits=True,
@@ -293,8 +308,31 @@ def test_experimental_invalid_propose_edit_format_stops_safely(tmp_path):
     assert "missing required field" in result.final_response.lower()
 
 
+def test_experimental_propose_edit_high_risk_not_applied_with_apply_flag(tmp_path):
+    target = tmp_path / "large.py"
+    old_block = "line\n" * 15
+    new_block = "fixed\n" * 15
+    target.write_text(old_block, encoding="utf-8")
+    agent = _experimental_agent(
+        tmp_path,
+        [
+            _propose_edit_response("large.py", old_block, new_block),
+            "ACTION: finish\nFINAL: Blocked by reviewer.",
+        ],
+        apply_proposed_edits=True,
+    )
+
+    result = agent.run("Try large apply.")
+
+    assert result.stopped_reason == "finish"
+    assert target.read_text(encoding="utf-8") == old_block
+    assert any("high risk" in observation.lower() for observation in result.observations)
+
+
 def test_run_experimental_llm_agent_passes_apply_flag(tmp_path):
-    target = tmp_path / "demo.py"
+    demo_dir = tmp_path / "demo_project"
+    demo_dir.mkdir()
+    target = demo_dir / "calculator.py"
     target.write_text("return a - b\n", encoding="utf-8")
     runtime = _runtime()
     monitor = TokenBudgetMonitor(runtime.app)
@@ -302,7 +340,11 @@ def test_run_experimental_llm_agent_passes_apply_flag(tmp_path):
         model=runtime.app.model,
         budget_monitor=monitor,
         responses=[
-            _propose_edit_response("demo.py", "return a - b", "return a + b"),
+            _propose_edit_response(
+                "demo_project/calculator.py",
+                "return a - b",
+                "return a + b",
+            ),
             "ACTION: finish\nFINAL: Done.",
         ],
     )
