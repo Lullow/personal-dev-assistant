@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -49,37 +50,53 @@ FINAL: concise final response to the user
 """.strip()
 
 EXPERIMENTAL_ACTION_PROTOCOL = """
-Respond using this exact protocol.
+Experimental LLM mode — strict action protocol
 
-Experimental LLM mode allows ONLY these actions:
-- read_file
+CRITICAL FORMAT RULES:
+- Reply with exactly ONE ACTION block per turn.
+- Do NOT write prose, markdown headings, or explanations before ACTION.
+- The first non-empty line of your reply MUST start with: ACTION:
+- Use only the allowed actions listed below.
+- Do NOT use partial_edit or subagents.
+
+Allowed actions only:
 - list_project_files
+- read_file
 - bash
 - propose_edit
 - finish
 
-Do NOT use partial_edit or subagents in experimental mode.
+First step for project inspection tasks:
+- Prefer starting with: ACTION: list_project_files
 
-ACTION: read_file
-PATH: relative/path
+Examples (copy the structure exactly):
 
 ACTION: list_project_files
 
+ACTION: read_file
+PATH: demo_project/calculator.py
+
 ACTION: bash
-COMMAND: safe command here
+COMMAND: pytest demo_project
 
 ACTION: propose_edit
-PATH: relative/path.py
+PATH: demo_project/calculator.py
 OLD_TEXT:
-exact old text
+return a - b
 NEW_TEXT:
-exact new text
+return a + b
 REASON:
-short reason
+Fix add() so it returns the sum.
 
 ACTION: finish
-FINAL: concise final response to the user
+FINAL: concise final response
 """.strip()
+
+_SECRET_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"sk-[A-Za-z0-9_-]{8,}", re.IGNORECASE), "sk-[REDACTED]"),
+    (re.compile(r"Bearer\s+\S+", re.IGNORECASE), "Bearer [REDACTED]"),
+    (re.compile(r"OPENAI_API_KEY\s*=\s*\S+", re.IGNORECASE), "OPENAI_API_KEY=[REDACTED]"),
+)
 
 
 @dataclass(frozen=True)
@@ -172,12 +189,21 @@ class MainAgent:
 
             if action.name == "unknown":
                 if self._stop_on_invalid_action:
+                    parse_observation = _format_parse_failure_observation(
+                        llm_response.text,
+                        config=self._app_config,
+                    )
                     step_records.append(
-                        _make_step_record(steps, action, observation="Invalid ACTION format.")
+                        _make_step_record(
+                            steps,
+                            action,
+                            observation=parse_observation,
+                        )
                     )
                     return MainAgentResult(
                         final_response=(
-                            "Stopped safely: could not parse a valid ACTION from the model response."
+                            "Stopped safely: could not parse a valid ACTION from the model "
+                            "response. See PARSE FAILURE and RAW MODEL RESPONSE in the trace."
                         ),
                         steps=steps,
                         stopped_reason="invalid_action",
@@ -438,3 +464,30 @@ def _compact_observation(source: str, text: str, *, config: AppConfig) -> str:
     if compacted.truncated:
         return f"{source}: {compacted.text}"
     return text if source == "agent" else compacted.text
+
+
+def _redact_secrets(text: str) -> str:
+    redacted = text
+    for pattern, replacement in _SECRET_PATTERNS:
+        redacted = pattern.sub(replacement, redacted)
+    return redacted
+
+
+def _format_parse_failure_observation(raw_model_text: str, *, config: AppConfig) -> str:
+    """Build a compact, redacted preview of an unparseable model response."""
+
+    redacted = _redact_secrets(raw_model_text.strip())
+    compacted = compact_output(redacted, config=config)
+    lines = [
+        "PARSE FAILURE: Could not parse a valid ACTION block from the model response.",
+        "The reply must start with ACTION: and contain no prose before it.",
+    ]
+    if compacted.truncated:
+        lines.append(
+            f"RAW MODEL RESPONSE (compact preview; "
+            f"original {compacted.original_char_count} characters):"
+        )
+    else:
+        lines.append("RAW MODEL RESPONSE:")
+    lines.append(compacted.text)
+    return "\n".join(lines)

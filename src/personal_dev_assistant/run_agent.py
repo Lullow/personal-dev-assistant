@@ -163,7 +163,29 @@ def _format_step_record(record: AgentStepRecord) -> list[str]:
         return lines
 
     if record.observation:
-        lines.extend(_render_observation_lines(record.action, record.observation))
+        if record.observation.startswith("PARSE FAILURE:"):
+            lines.extend(_render_parse_failure_observation(record.observation))
+        else:
+            lines.extend(_render_observation_lines(record.action, record.observation))
+    return lines
+
+
+def _render_parse_failure_observation(observation: str) -> list[str]:
+    lines = ["  [PARSE FAILURE]"]
+    in_raw = False
+    for line in observation.splitlines():
+        if line.startswith("PARSE FAILURE:"):
+            lines.append(f"    {line}")
+            continue
+        if line.startswith("RAW MODEL RESPONSE"):
+            lines.append("  [RAW MODEL RESPONSE]")
+            in_raw = True
+            if line.endswith(":"):
+                continue
+            lines.append(f"    {line}")
+            continue
+        if in_raw:
+            lines.append(f"    {line}")
     return lines
 
 

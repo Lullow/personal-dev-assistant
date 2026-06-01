@@ -11,7 +11,7 @@ from personal_dev_assistant.agents.main import (
 )
 from personal_dev_assistant.agents.protocol import parse_agent_action
 from personal_dev_assistant.budget import TokenBudgetMonitor
-from personal_dev_assistant.config import AppConfig, EnvironmentConfig, RuntimeConfig
+from personal_dev_assistant.config import AppConfig, ContextConfig, EnvironmentConfig, RuntimeConfig
 from personal_dev_assistant.llm.client import MissingApiKeyError
 from personal_dev_assistant.models import TokenUsage
 from personal_dev_assistant.run_agent import (
@@ -36,8 +36,11 @@ def _experimental_agent(
     responses: list[str],
     *,
     apply_proposed_edits: bool = False,
+    app_config: AppConfig | None = None,
 ) -> MainAgent:
     runtime = _runtime()
+    if app_config is not None:
+        runtime = RuntimeConfig(app=app_config, environment=runtime.environment)
     monitor = TokenBudgetMonitor(runtime.app)
     client = ScriptedChatClient(
         model=runtime.app.model,
@@ -134,6 +137,77 @@ def test_experimental_agent_stops_on_invalid_action_format(tmp_path):
 
     assert result.stopped_reason == "invalid_action"
     assert "could not parse" in result.final_response.lower()
+    assert result.step_records
+    assert "RAW MODEL RESPONSE" in result.step_records[-1].observation
+    assert "PARSE FAILURE" in result.step_records[-1].observation
+
+
+def test_invalid_action_includes_compact_raw_model_response(tmp_path):
+    long_prose = "Sure! Let me help.\n\n" + ("comment line\n" * 400)
+    app_config = AppConfig(context=ContextConfig(max_observation_chars=300))
+    agent = _experimental_agent(
+        tmp_path,
+        [long_prose],
+        app_config=app_config,
+    )
+
+    result = agent.run("Inspect project.")
+
+    assert result.stopped_reason == "invalid_action"
+    observation = result.step_records[-1].observation
+    assert observation is not None
+    assert "RAW MODEL RESPONSE" in observation
+    assert "truncated" in observation.lower() or "compact preview" in observation.lower()
+    assert len(observation) < len(long_prose)
+
+
+def test_format_experimental_output_shows_parse_failure_sections(tmp_path):
+    long_prose = "Intro text without ACTION.\n" + ("x" * 200)
+    runtime = _runtime()
+    monitor = TokenBudgetMonitor(runtime.app)
+    client = ScriptedChatClient(
+        model=runtime.app.model,
+        budget_monitor=monitor,
+        responses=[long_prose],
+    )
+    result = run_experimental_llm_agent(
+        "Task",
+        runtime_config=runtime,
+        project_root=tmp_path,
+        chat_client=client,
+    )
+
+    text = format_experimental_output(result)
+    assert "[PARSE FAILURE]" in text
+    assert "[RAW MODEL RESPONSE]" in text
+
+
+def test_experimental_action_protocol_strict_format_and_examples():
+    protocol = EXPERIMENTAL_ACTION_PROTOCOL
+
+    assert "exactly ONE ACTION block" in protocol
+    assert "Do NOT write prose" in protocol or "no prose" in protocol.lower()
+    assert "first non-empty line" in protocol.lower() or "MUST start with: ACTION:" in protocol
+    assert "ACTION: list_project_files" in protocol
+    assert "Prefer starting with: ACTION: list_project_files" in protocol
+    assert "ACTION: read_file\nPATH: demo_project/calculator.py" in protocol
+    assert "ACTION: bash\nCOMMAND: pytest demo_project" in protocol
+    assert "ACTION: propose_edit" in protocol
+    assert "Fix add() so it returns the sum." in protocol
+    assert "partial_edit" in protocol.lower()
+    assert "subagents" in protocol.lower()
+
+
+def test_parse_failure_observation_redacts_secrets():
+    from personal_dev_assistant.agents.main import _format_parse_failure_observation
+
+    observation = _format_parse_failure_observation(
+        "Here is my key sk-or-v1-abcdefghijklmnopqrstuvwxyz1234567890",
+        config=AppConfig(),
+    )
+
+    assert "sk-[REDACTED]" in observation
+    assert "abcdefghijklmnopqrstuvwxyz" not in observation
 
 
 def test_experimental_agent_risky_bash_is_not_executed(tmp_path):
