@@ -85,6 +85,31 @@ def test_agent_can_finish_directly(tmp_path):
     assert result.steps == 1
 
 
+def test_finish_without_final_produces_fallback_final_response(tmp_path):
+    agent = _make_agent(
+        tmp_path,
+        ["ACTION: finish"],
+    )
+
+    result = agent.run("Finish without summary.")
+
+    assert result.stopped_reason == "finish"
+    assert "did not provide a FINAL summary" in result.final_response
+    assert "agent trace above" in result.final_response
+
+
+def test_finish_with_final_uses_model_final_response(tmp_path):
+    agent = _make_agent(
+        tmp_path,
+        ["ACTION: finish\nFINAL: Listed files and proposed a fix."],
+    )
+
+    result = agent.run("Summarize work.")
+
+    assert result.stopped_reason == "finish"
+    assert result.final_response == "Listed files and proposed a fix."
+
+
 def test_agent_can_call_read_file(tmp_path):
     file_path = tmp_path / "demo_project" / "calculator.py"
     file_path.parent.mkdir(parents=True)

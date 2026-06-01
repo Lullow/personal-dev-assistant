@@ -216,6 +216,33 @@ def test_experimental_action_protocol_strict_format_and_examples():
     assert "Do NOT put ACTION and parameters on the same line" in protocol
     assert "Preferred format" in protocol or "action name on the same line" in protocol
     assert "ACTION: bash command: pytest demo_project" in protocol
+    assert "FINAL is required" in protocol or "FINAL is required for finish" in protocol
+    assert "Never return only ACTION: finish" in protocol
+    assert "MUST always include FINAL:" in protocol or "MUST always include FINAL" in protocol
+    assert "--apply-proposed-edits if not applied" in protocol or (
+        "how to apply with --apply-proposed-edits" in protocol
+    )
+
+
+def test_experimental_finish_without_final_produces_fallback(tmp_path):
+    agent = _experimental_agent(tmp_path, ["ACTION: finish"])
+
+    result = agent.run("Finish without summary.")
+
+    assert result.stopped_reason == "finish"
+    assert "did not provide a FINAL summary" in result.final_response
+
+
+def test_experimental_finish_with_final_uses_model_response(tmp_path):
+    agent = _experimental_agent(
+        tmp_path,
+        ["ACTION: finish\nFINAL: Experimental run complete."],
+    )
+
+    result = agent.run("Finish with summary.")
+
+    assert result.stopped_reason == "finish"
+    assert result.final_response == "Experimental run complete."
 
 
 def test_parse_failure_observation_redacts_secrets():

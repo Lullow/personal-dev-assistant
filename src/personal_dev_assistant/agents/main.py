@@ -92,8 +92,8 @@ Fix proposal tasks (MUST use propose_edit):
 - After ACTION: read_file, when you know the exact OLD_TEXT and NEW_TEXT for a fix, your NEXT action must be ACTION: propose_edit (not ACTION: finish).
 
 After ACTION: propose_edit:
-- If the observation says the proposal is valid but not applied, your NEXT reply must be ACTION: finish.
-- In FINAL, summarize the proposed fix, reviewer risk level, and that the user can apply it with --apply-proposed-edits.
+- If the observation says the proposal is valid but not applied, your NEXT reply must be ACTION: finish with FINAL.
+- In FINAL, summarize: the failing test or issue found; that a proposed edit was submitted; reviewer risk level if known; whether it was applied; and --apply-proposed-edits if not applied.
 - Do NOT apologize, refuse, or say you cannot help after a valid safe proposal.
 - Do NOT attempt another propose_edit for the same fix unless the observation says validation failed.
 
@@ -153,7 +153,22 @@ Fix add() so it returns the sum.
 
 ACTION: finish
 FINAL: Tests fail because add() subtracts. Reviewed proposed edit submitted (not applied). Re-run with --apply-proposed-edits to apply.
+
+FINISH action rules (FINAL is required):
+- ACTION: finish MUST always include FINAL: with a concise user-facing summary.
+- Never return only ACTION: finish — a bare finish action without FINAL is not acceptable.
+- After ACTION: propose_edit, FINAL must summarize:
+  - the failing test or issue found
+  - that a proposed edit was submitted
+  - reviewer risk level if known from the observation
+  - whether the edit was applied or not
+  - how to apply with --apply-proposed-edits if not applied
 """.strip()
+
+_FINISH_WITHOUT_FINAL_FALLBACK = (
+    "Finished, but the model did not provide a FINAL summary. "
+    "See the agent trace above for the latest tool/reviewer observations."
+)
 
 _SECRET_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"sk-[A-Za-z0-9_-]{8,}", re.IGNORECASE), "sk-[REDACTED]"),
@@ -243,7 +258,10 @@ class MainAgent:
                     )
                 )
                 return MainAgentResult(
-                    final_response=action.final_response or llm_response.text.strip(),
+                    final_response=_resolve_finish_final_response(
+                        action,
+                        llm_response.text,
+                    ),
                     steps=steps,
                     stopped_reason="finish",
                     observations=observations,
@@ -450,6 +468,27 @@ def _make_step_record(
         action_detail=_format_action_detail(action),
         observation=observation,
     )
+
+
+def _is_useless_finish_final(final_response: str | None) -> bool:
+    """True when finish has no meaningful FINAL summary for the user."""
+
+    if final_response is None:
+        return True
+    stripped = final_response.strip()
+    if not stripped:
+        return True
+    normalized = " ".join(stripped.split()).upper()
+    return normalized in {"ACTION: FINISH", "ACTION:FINISH"}
+
+
+def _resolve_finish_final_response(action: AgentAction, raw_text: str) -> str:
+    """Return the model FINAL summary, or a safe fallback when it is missing."""
+
+    candidate = action.final_response or raw_text.strip()
+    if _is_useless_finish_final(candidate):
+        return _FINISH_WITHOUT_FINAL_FALLBACK
+    return candidate
 
 
 def _format_action_detail(action: AgentAction) -> str:
