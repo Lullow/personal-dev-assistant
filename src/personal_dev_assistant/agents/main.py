@@ -54,10 +54,22 @@ Experimental LLM mode — strict action protocol
 
 CRITICAL FORMAT RULES:
 - Reply with exactly ONE ACTION block per turn.
-- Do NOT write prose, markdown headings, or explanations before ACTION.
+- Do NOT write prose, markdown headings, apologies, refusals, or explanations before ACTION.
 - The first non-empty line of your reply MUST start with: ACTION:
+- Do NOT put ACTION and parameters on the same line.
+- Preferred format (action name on the same line as ACTION:):
+  ACTION: list_project_files
+- Also accepted (action name on the next line):
+  ACTION:
+  list_project_files
+- Correct bash format:
+  ACTION: bash
+  COMMAND: pytest demo_project
+- Incorrect:
+  ACTION: bash command: pytest demo_project
 - Use only the allowed actions listed below.
 - Do NOT use partial_edit or subagents.
+- Never reply with only conversational text. Always use ACTION: finish if the task is done.
 
 Allowed actions only:
 - list_project_files
@@ -69,7 +81,58 @@ Allowed actions only:
 First step for project inspection tasks:
 - Prefer starting with: ACTION: list_project_files
 
-Examples (copy the structure exactly):
+Testing demo_project:
+- For demo_project tasks, prefer: ACTION: bash with COMMAND: pytest demo_project
+- Do NOT run full-repo pytest unless the user explicitly asks for the whole repository.
+
+Fix proposal tasks (MUST use propose_edit):
+- If the user asks to propose a fix, suggest a fix, prepare a fix, or similar, you MUST use ACTION: propose_edit before ACTION: finish.
+- Do NOT claim a fix was proposed in FINAL unless ACTION: propose_edit was actually used in this run.
+- Do NOT describe a code change only in FINAL — submit it through ACTION: propose_edit so the reviewer gate runs.
+- After ACTION: read_file, when you know the exact OLD_TEXT and NEW_TEXT for a fix, your NEXT action must be ACTION: propose_edit (not ACTION: finish).
+
+After ACTION: propose_edit:
+- If the observation says the proposal is valid but not applied, your NEXT reply must be ACTION: finish.
+- In FINAL, summarize the proposed fix, reviewer risk level, and that the user can apply it with --apply-proposed-edits.
+- Do NOT apologize, refuse, or say you cannot help after a valid safe proposal.
+- Do NOT attempt another propose_edit for the same fix unless the observation says validation failed.
+
+Recommended demo_project flow when proposing a fix (one ACTION per turn, in order):
+1. ACTION: list_project_files
+2. ACTION: bash
+   COMMAND: pytest demo_project
+3. ACTION: read_file
+   PATH: demo_project/calculator.py
+4. ACTION: propose_edit
+   (with PATH, OLD_TEXT, NEW_TEXT, REASON — required before finish)
+5. ACTION: finish
+   FINAL: summarize findings and the reviewed proposal (only after step 4)
+
+Full example flow for a fix proposal task:
+
+ACTION: list_project_files
+
+ACTION: bash
+COMMAND: pytest demo_project
+
+ACTION: read_file
+PATH: demo_project/calculator.py
+
+ACTION: propose_edit
+PATH: demo_project/calculator.py
+OLD_TEXT:
+def add(a, b):
+    return a - b
+NEW_TEXT:
+def add(a, b):
+    return a + b
+REASON:
+Fix add() so it returns the sum.
+
+ACTION: finish
+FINAL: I found the failing test and submitted a reviewed proposed edit. It was not applied because --apply-proposed-edits was not set.
+
+Shorter propose_edit example (single-line change):
 
 ACTION: list_project_files
 
@@ -89,7 +152,7 @@ REASON:
 Fix add() so it returns the sum.
 
 ACTION: finish
-FINAL: concise final response
+FINAL: Tests fail because add() subtracts. Reviewed proposed edit submitted (not applied). Re-run with --apply-proposed-edits to apply.
 """.strip()
 
 _SECRET_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (

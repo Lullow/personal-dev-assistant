@@ -196,6 +196,26 @@ def test_experimental_action_protocol_strict_format_and_examples():
     assert "Fix add() so it returns the sum." in protocol
     assert "partial_edit" in protocol.lower()
     assert "subagents" in protocol.lower()
+    assert "pytest demo_project" in protocol
+    assert "Do NOT run full-repo pytest" in protocol or "whole repository" in protocol.lower()
+    assert "valid but not applied" in protocol.lower()
+    assert "ACTION: finish" in protocol
+    assert "NEXT reply must be ACTION: finish" in protocol or "must be ACTION: finish" in protocol
+    assert "Do NOT apologize" in protocol or "Do not apologize" in protocol.lower()
+    assert "cannot help" in protocol.lower() or "refuse" in protocol.lower()
+    assert "Recommended demo_project flow" in protocol
+    assert "5. ACTION: finish" in protocol or "ACTION: finish\n   FINAL:" in protocol
+    assert "MUST use ACTION: propose_edit before ACTION: finish" in protocol
+    assert "propose a fix" in protocol.lower()
+    assert "Do NOT claim a fix was proposed" in protocol or "do not claim" in protocol.lower()
+    assert "unless ACTION: propose_edit was actually used" in protocol
+    assert "NEXT action must be ACTION: propose_edit" in protocol
+    assert "Full example flow for a fix proposal task" in protocol
+    assert "submitted a reviewed proposed edit" in protocol
+    assert "ACTION: propose_edit\nPATH: demo_project/calculator.py\nOLD_TEXT:\ndef add(a, b):" in protocol
+    assert "Do NOT put ACTION and parameters on the same line" in protocol
+    assert "Preferred format" in protocol or "action name on the same line" in protocol
+    assert "ACTION: bash command: pytest demo_project" in protocol
 
 
 def test_parse_failure_observation_redacts_secrets():
