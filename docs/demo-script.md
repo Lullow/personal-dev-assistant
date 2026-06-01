@@ -242,6 +242,15 @@ Suggested flow (canonical or natural phrases both work):
 
 Say clearly: **deterministic command-driven MVP**, not free-form LLM chat. Natural phrases like `show files`, `run pytest`, and `repair it` are mapped to the same safe commands — no LLM parsing. The `fix` command shows MAIN AGENT → PLANNER → EXPLORER → CODER → REVIEWER → PARTIAL_EDIT → BASH with real safe tools.
 
+Optional follow-up with API key:
+
+```bash
+export OPENAI_API_KEY=your-key-here
+personal-dev-assistant run-agent "List demo_project, run pytest, propose a fix" --llm
+```
+
+Point out labeled sections in output: **AGENT TRACE**, **TOKEN BUDGET**, **FINAL ANSWER**. Mention `--apply-proposed-edits` only if you want to show a real apply (low/medium risk only).
+
 ---
 
 ## 9. Strengths
@@ -259,7 +268,7 @@ Say clearly: **deterministic command-driven MVP**, not free-form LLM chat. Natur
 
 - **Not a production Claude Code replacement** — limited to small, local workflows.
 - **Deterministic demo and chat are scripted** — safest for presentation; not free-form LLM sessions.
-- **Experimental LLM mode is optional** — requires API key; restricted to read/list/bash/finish; not for primary demo.
+- **Experimental LLM mode is optional** — requires API key; shows step-by-step trace (`[LLM DECISION]`, `[TOOL RESULT]`, `[REVIEWER]`); `chat`/demo remain primary paths.
 - **Sub-agents are sequential** — no parallel execution.
 - **Small demo only** — one intentional bug, one-line fix; not large refactors.
 - **LLM demo needs API key + network** — separated via env vars; not required for VG live demo.

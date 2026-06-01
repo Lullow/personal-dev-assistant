@@ -172,25 +172,113 @@ def test_run_experimental_llm_agent_with_scripted_client(tmp_path):
     assert result.agent_result.final_response == "Experimental run complete."
 
 
-def test_format_experimental_output_includes_banner():
+def test_format_experimental_output_includes_banner_and_trace(tmp_path):
     runtime = _runtime()
     monitor = TokenBudgetMonitor(runtime.app)
     client = ScriptedChatClient(
         model=runtime.app.model,
         budget_monitor=monitor,
-        responses=["ACTION: finish\nFINAL: Done."],
+        responses=[
+            "ACTION: list_project_files",
+            "ACTION: finish\nFINAL: Done.",
+        ],
     )
     result = run_experimental_llm_agent(
-        "Task",
+        "List and finish.",
         runtime_config=runtime,
-        project_root=".",
+        project_root=tmp_path,
         chat_client=client,
     )
 
     text = format_experimental_output(result)
     assert EXPERIMENTAL_BANNER.splitlines()[0] in text
-    assert "Final response:" in text
+    assert "EXPERIMENTAL LLM AGENT MODE" in text
+    assert "Apply proposed edits: no" in text
+    assert "--- Step 1 ---" in text
+    assert "[LLM DECISION]" in text
+    assert "list_project_files" in text
+    assert "[TOOL RESULT]" in text
+    assert "--- Step 2 ---" in text
+    assert "Stopped reason: finish" in text
+    assert "TOKEN BUDGET" in text
+    assert "Total tokens used:" in text
+    assert "FINAL ANSWER" in text
     assert "Done." in text
+
+
+def test_format_experimental_output_labels_propose_edit_reviewer(tmp_path):
+    demo_dir = tmp_path / "demo_project"
+    demo_dir.mkdir()
+    (demo_dir / "calculator.py").write_text("return a - b\n", encoding="utf-8")
+    runtime = _runtime()
+    monitor = TokenBudgetMonitor(runtime.app)
+    client = ScriptedChatClient(
+        model=runtime.app.model,
+        budget_monitor=monitor,
+        responses=[
+            _propose_edit_response(
+                "demo_project/calculator.py",
+                "return a - b",
+                "return a + b",
+            ),
+            "ACTION: finish\nFINAL: Proposed.",
+        ],
+    )
+    result = run_experimental_llm_agent(
+        "Propose fix.",
+        runtime_config=runtime,
+        project_root=tmp_path,
+        chat_client=client,
+    )
+
+    text = format_experimental_output(result)
+    assert "[REVIEWER]" in text
+    assert "risk_level=" in text
+    assert "reviewer_summary=" in text
+    assert "recommendation=" in text
+
+
+def test_format_experimental_output_shows_apply_flag(tmp_path):
+    runtime = _runtime()
+    monitor = TokenBudgetMonitor(runtime.app)
+    client = ScriptedChatClient(
+        model=runtime.app.model,
+        budget_monitor=monitor,
+        responses=["ACTION: finish\nFINAL: ok"],
+    )
+    result = run_experimental_llm_agent(
+        "Task",
+        runtime_config=runtime,
+        project_root=tmp_path,
+        chat_client=client,
+        apply_proposed_edits=True,
+    )
+
+    text = format_experimental_output(result)
+    assert "Apply proposed edits: yes" in text
+
+
+def test_format_experimental_output_labels_blocked_bash_as_safety(tmp_path):
+    runtime = _runtime()
+    monitor = TokenBudgetMonitor(runtime.app)
+    client = ScriptedChatClient(
+        model=runtime.app.model,
+        budget_monitor=monitor,
+        responses=[
+            "ACTION: bash\nCOMMAND: rm -rf demo_project",
+            "ACTION: finish\nFINAL: done",
+        ],
+    )
+    result = run_experimental_llm_agent(
+        "Risky bash",
+        runtime_config=runtime,
+        project_root=tmp_path,
+        chat_client=client,
+    )
+
+    text = format_experimental_output(result)
+    assert "[SAFETY]" in text
+    assert "blocked" in text.lower()
 
 
 def test_cli_run_agent_requires_llm_flag(tmp_path, monkeypatch):

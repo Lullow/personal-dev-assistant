@@ -36,7 +36,7 @@ The included demo project (`demo_project/`) contains an intentional bug in `calc
 | LLM-backed free-form chat | **Not implemented** |
 | Docker packaging | Implemented |
 
-**229 tests** currently pass.
+**246 tests** currently pass.
 
 For implementation history, see [`docs/development-log.md`](docs/development-log.md).
 
@@ -351,6 +351,25 @@ What it does:
 
 In experimental LLM mode, the model may propose a change with `ACTION: propose_edit` instead of editing files directly. By default, proposals are **validated but not applied** — the file on disk stays unchanged.
 
+**Primary demo:** use `personal-dev-assistant chat` or `python -m personal_dev_assistant.demo.runner` (no API key). Experimental `run-agent` is for showing a real LLM loop when you have a key.
+
+#### Review only (default)
+
+```bash
+export OPENAI_API_KEY=your-key-here
+personal-dev-assistant run-agent "Inspect demo_project, run pytest, and propose a fix" --llm
+```
+
+Terminal output includes a step-by-step **AGENT TRACE** (`[LLM DECISION]`, `[TOOL RESULT]`, `[SAFETY]`, `[REVIEWER]`), run summary, token budget, and **FINAL ANSWER**. Files are not modified.
+
+#### Apply low/medium-risk proposals
+
+```bash
+personal-dev-assistant run-agent "Fix the calculator bug in demo_project" --llm --apply-proposed-edits
+```
+
+Same trace format as review-only mode.
+
 The model must use this strict format:
 
 ```text
@@ -373,21 +392,18 @@ When a proposal is received, the system:
 - returns a compact observation with `reviewer_summary`, `recommendation`, and a mini diff when valid
 - tells you how to apply the edit safely if you choose to
 
-**By default, nothing is written.** To apply validated proposals, opt in explicitly:
-
-```bash
-personal-dev-assistant run-agent "Fix the calculator bug" --llm --apply-proposed-edits
-```
-
-With `--apply-proposed-edits`, only **low** and **medium** risk proposals are applied through the existing `partial_edit` tool (same safety checks; no bypass). **High** risk proposals are reviewed but never auto-applied. Without the flag, you can review the mini diff and reviewer output first.
+**By default, nothing is written.** With `--apply-proposed-edits`, only **low** and **medium** risk proposals are applied through the existing `partial_edit` tool (same safety checks; no bypass). **High** risk proposals are reviewed but never auto-applied.
 
 Example output starts with:
 
 ```text
+======================================================================
 *** EXPERIMENTAL LLM AGENT MODE ***
-Optional live LLM path — not the primary demo route.
-Proposed edits are validated and reviewed by default; only low/medium-risk proposals
-can be applied with --apply-proposed-edits. High-risk proposals are never auto-applied.
+Optional live LLM path — NOT the primary demo route.
+======================================================================
+--- Step 1 ---
+  [LLM DECISION] ACTION: list_project_files
+  [TOOL RESULT] ...
 ```
 
 ## Project layout

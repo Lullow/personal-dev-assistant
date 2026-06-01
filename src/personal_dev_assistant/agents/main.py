@@ -83,6 +83,16 @@ FINAL: concise final response to the user
 
 
 @dataclass(frozen=True)
+class AgentStepRecord:
+    """One LLM step in the main agent loop (for trace display)."""
+
+    step: int
+    action: str
+    action_detail: str
+    observation: str | None = None
+
+
+@dataclass(frozen=True)
 class MainAgentResult:
     """Result from one main-agent run."""
 
@@ -90,6 +100,7 @@ class MainAgentResult:
     steps: int
     stopped_reason: str
     observations: list[str] = field(default_factory=list)
+    step_records: list[AgentStepRecord] = field(default_factory=list)
 
 
 class MainAgent:
@@ -125,6 +136,7 @@ class MainAgent:
         """Run the main loop until finish, max steps, or budget refusal."""
 
         observations: list[str] = []
+        step_records: list[AgentStepRecord] = []
         steps = 0
         messages = self._initial_messages(task)
 
@@ -138,19 +150,31 @@ class MainAgent:
                     steps=steps,
                     stopped_reason="budget_exceeded",
                     observations=observations,
+                    step_records=step_records,
                 )
 
             action = parse_agent_action(llm_response.text)
             if action.name == "finish":
+                step_records.append(
+                    _make_step_record(
+                        steps,
+                        action,
+                        observation=None,
+                    )
+                )
                 return MainAgentResult(
                     final_response=action.final_response or llm_response.text.strip(),
                     steps=steps,
                     stopped_reason="finish",
                     observations=observations,
+                    step_records=step_records,
                 )
 
             if action.name == "unknown":
                 if self._stop_on_invalid_action:
+                    step_records.append(
+                        _make_step_record(steps, action, observation="Invalid ACTION format.")
+                    )
                     return MainAgentResult(
                         final_response=(
                             "Stopped safely: could not parse a valid ACTION from the model response."
@@ -158,6 +182,7 @@ class MainAgent:
                         steps=steps,
                         stopped_reason="invalid_action",
                         observations=observations,
+                        step_records=step_records,
                     )
                 observation = _compact_observation(
                     "agent",
@@ -165,10 +190,24 @@ class MainAgent:
                     config=self._app_config,
                 )
                 observations.append(observation)
+                step_records.append(
+                    _make_step_record(
+                        steps,
+                        AgentAction(name="unknown", params={}),
+                        observation=observation,
+                    )
+                )
                 messages = self._build_messages(task, observations)
                 continue
 
             if self._allowed_actions is not None and action.name not in self._allowed_actions:
+                step_records.append(
+                    _make_step_record(
+                        steps,
+                        action,
+                        observation=f"Action `{action.name}` is not allowed in this mode.",
+                    )
+                )
                 return MainAgentResult(
                     final_response=(
                         f"Stopped safely: action `{action.name}` is not allowed in this mode."
@@ -176,11 +215,13 @@ class MainAgent:
                     steps=steps,
                     stopped_reason="blocked_action",
                     observations=observations,
+                    step_records=step_records,
                 )
 
             if action.name == "subagents":
                 observation = self._run_subagents(action, task, observations)
                 observations.append(observation)
+                step_records.append(_make_step_record(steps, action, observation=observation))
                 messages = self._build_messages(task, observations)
                 continue
 
@@ -188,20 +229,26 @@ class MainAgent:
                 propose_error = _propose_edit_format_error(action)
                 if propose_error is not None:
                     if self._stop_on_invalid_action:
+                        step_records.append(
+                            _make_step_record(steps, action, observation=propose_error)
+                        )
                         return MainAgentResult(
                             final_response=propose_error,
                             steps=steps,
                             stopped_reason="invalid_propose_edit",
                             observations=observations,
+                            step_records=step_records,
                         )
                     observation = _compact_observation("propose_edit", propose_error, config=self._app_config)
                     observations.append(observation)
+                    step_records.append(_make_step_record(steps, action, observation=observation))
                     messages = self._build_messages(task, observations)
                     continue
 
             tool_result = self._execute_action(action)
             observation = _compact_tool_observation(action.name, tool_result, self._app_config)
             observations.append(observation)
+            step_records.append(_make_step_record(steps, action, observation=observation))
             messages = self._build_messages(task, observations)
 
         return MainAgentResult(
@@ -209,6 +256,7 @@ class MainAgent:
             steps=steps,
             stopped_reason="max_steps",
             observations=observations,
+            step_records=step_records,
         )
 
     def _execute_action(self, action: AgentAction) -> ToolResult:
@@ -299,6 +347,42 @@ class MainAgent:
         compact_parts = [compact_agent_result(result, self._app_config) for result in results]
         combined = "\n".join(compact_parts) if compact_parts else "subagents: no roles requested"
         return _compact_observation("subagents", combined, config=self._app_config)
+
+
+def _make_step_record(
+    step: int,
+    action: AgentAction,
+    *,
+    observation: str | None,
+) -> AgentStepRecord:
+    return AgentStepRecord(
+        step=step,
+        action=action.name,
+        action_detail=_format_action_detail(action),
+        observation=observation,
+    )
+
+
+def _format_action_detail(action: AgentAction) -> str:
+    if action.name == "read_file":
+        return f"PATH: {action.params.get('path', '').strip()}"
+    if action.name == "bash":
+        return f"COMMAND: {action.params.get('command', '').strip()}"
+    if action.name in {"partial_edit", "propose_edit"}:
+        path = action.params.get("path", "").strip()
+        reason = action.params.get("reason", "").strip()
+        detail = f"PATH: {path}"
+        if reason:
+            detail = f"{detail} | REASON: {reason}"
+        return detail
+    if action.name == "subagents":
+        return f"ROLES: {action.params.get('roles', '').strip()}"
+    if action.name == "finish":
+        final = action.final_response or ""
+        return final[:200] + ("..." if len(final) > 200 else "")
+    if action.name == "unknown":
+        return "Unparseable model response"
+    return action.name
 
 
 def _propose_edit_format_error(action: AgentAction) -> str | None:
