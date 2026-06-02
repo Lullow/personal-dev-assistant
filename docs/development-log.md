@@ -722,6 +722,45 @@ YYYY-MM-DD
 
 - LLM intent parsing kräver API-nyckel när den används; standarddemo förblir deterministisk utan `--llm-intents`.
 
+### 2026-06-02 - Interactive Assistant terminal UI polish
+
+#### Vad som implementerades
+
+- Förbättrade presentationen av `personal-dev-assistant chat` (Interactive Assistant v2.1) utan att ändra kärnbeteende eller säkerhet.
+- Tydliga **User**-block för varje kommando (box runt användarens input).
+- Konsekventa meddelandeprefix, t.ex. `[MAIN]`, `[TOOL: READ_FILE]`, `[TOOL: BASH]`, `[TOOL: PARTIAL_EDIT]`, `[SAFETY]`, `[TOKENS]`, `[CONTEXT]`, samt agentrader för `[CODE REVIEWER]`, `[TEST AGENT]` och `[FIX PLANNER]`.
+- Filförhandsvisning med radnummer och tydligare diff-presentation vid proposed edit.
+- Kompakta **State**-rader som visar aktuell fil, pending edit (`yes`/`no`) och teststatus (`not run` / `passed` / `failed`).
+- Dynamisk prompt som speglar sessionen, t.ex. `pda >`, `calculator.py >`, `calculator.py [pending edit] >`.
+- `/apply` krävs fortfarande för filändring; vanligt `apply` blockeras med `[SAFETY]`.
+
+#### Manuell kontroll utanför calculator-demo
+
+- Skapade tillfälligt `demo_project/string_utils.py` med buggen `shout(text)` som returnerar `text.lower()` medan testet förväntar `"HELLO"` för `shout("hello")`.
+- `pytest` visade förväntat fel.
+- Chat kunde **öppna och förhandsvisa** den nya filen; state-raden visade korrekt `string_utils.py` som current file.
+- `review it` och `fix it` gav **ingen automatisk fix** — assistanten bad om manuell inspektion / sa att ingen automatisk fix fanns.
+
+#### Vad det visar (ärlig begränsning)
+
+- **Generellt nog:** filhantering, preview, UI, session state och prompt fungerar för andra filer än `calculator.py`.
+- **Fortfarande demo-centrerat:** deterministisk review/fix-logik i `interactive/review.py` känner i praktiken igen mönstret för calculator-buggen (`return a - b` → `return a + b`), inte godtyckliga buggar i nya filer.
+
+#### Produktnytta
+
+- VG-demo och live-presentation blir lättare att följa i terminalen.
+- Tydligare separation mellan användare, main assistant, subagents, tools och safety.
+
+#### Tester
+
+- Kördes: `./.venv/bin/python -m pytest tests`
+- Resultat: **327 passed**.
+
+#### Begränsning / nästa steg
+
+- Nästa planerade steg: **generalisera review/fix** till ett återanvändbart system med **known bug patterns** (inte bara calculator), innan mer avancerad test-driven debugging.
+- `string_utils.py` kan tas bort eller behållas som manuellt testexempel; ingen kodändring gjordes i detta dokumentationssteg.
+
 ### YYYY-MM-DD
 
 ### Vad jag gjorde
