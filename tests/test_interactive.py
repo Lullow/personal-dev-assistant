@@ -102,6 +102,7 @@ def test_parse_command_empty_line_returns_none():
         ("fix the bug", ParsedCommand(name="fix")),
         ("repair it", ParsedCommand(name="fix")),
         ("apply", ParsedCommand(name="apply")),
+        ("/apply", ParsedCommand(name="apply_confirm")),
         ("reject", ParsedCommand(name="reject")),
         ("show tokens", ParsedCommand(name="tokens")),
         ("show token usage", ParsedCommand(name="tokens")),
@@ -275,18 +276,36 @@ def test_fix_creates_pending_edit_without_modifying_file(tmp_path):
     assert FIXED_RETURN not in calculator_text
 
 
-def test_apply_modifies_file_after_explicit_command(tmp_path):
+def test_slash_apply_through_parse_command_modifies_file_after_pending_edit(tmp_path):
     _write_demo_project(tmp_path, calculator_source=BUGGY_CALCULATOR)
     assistant = _assistant(tmp_path)
 
     assistant.handle(ParsedCommand(name="read", arg=CALCULATOR_PATH))
     assistant.handle(ParsedCommand(name="fix"))
-    assistant.handle(ParsedCommand(name="apply"))
+    slash_apply = parse_command("/apply")
+    assert slash_apply == ParsedCommand(name="apply_confirm")
+    assistant.handle(slash_apply)
 
     calculator_text = (tmp_path / CALCULATOR_PATH).read_text(encoding="utf-8")
     assert FIXED_RETURN in calculator_text
     assert BUGGY_RETURN not in calculator_text
     assert assistant.session.pending_edit is None
+
+
+def test_apply_without_slash_does_not_modify_file_and_shows_hint(tmp_path):
+    _write_demo_project(tmp_path, calculator_source=BUGGY_CALCULATOR)
+    output = StringIO()
+    assistant = _assistant(tmp_path, output=output)
+
+    assistant.handle(ParsedCommand(name="read", arg=CALCULATOR_PATH))
+    assistant.handle(ParsedCommand(name="fix"))
+    assistant.handle(parse_command("apply"))
+
+    calculator_text = (tmp_path / CALCULATOR_PATH).read_text(encoding="utf-8")
+    assert BUGGY_RETURN in calculator_text
+    assert FIXED_RETURN not in calculator_text
+    assert assistant.session.pending_edit is not None
+    assert "requires explicit `/apply`" in output.getvalue()
 
 
 def test_reject_clears_pending_edit_without_modifying_file(tmp_path):

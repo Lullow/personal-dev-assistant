@@ -97,7 +97,7 @@ def run_fix_planner(*, path: str, content: str) -> SubAgentReview:
             summary="One-line fix available for the demo bug.",
             finding=f"Exact replacement: `{BUGGY_RETURN}` -> `{FIXED_RETURN}`.",
             recommendation=(
-                "Use `fix it` to create a pending proposed edit, then `apply` to change the file."
+                "Use `fix it` to create a pending proposed edit, then `/apply` to change the file."
             ),
         )
     if FIXED_RETURN in content:

@@ -61,6 +61,7 @@ _INTENT_UNKNOWN_USER_MESSAGE = (
     "Could not confidently interpret that request. "
     "Try a command from help, or rephrase more clearly."
 )
+_INTENT_APPLY_REQUIRES_SLASH_MESSAGE = "Applying edits requires explicit /apply."
 
 
 @dataclass(frozen=True)
@@ -171,6 +172,9 @@ def classification_to_command(
 
     if classification.intent not in ALLOWED_INTENTS:
         return "unknown", None, _INTENT_UNKNOWN_USER_MESSAGE
+
+    if classification.intent == "apply":
+        return "unknown", None, _INTENT_APPLY_REQUIRES_SLASH_MESSAGE
 
     return classification.intent, classification.arg, None
 

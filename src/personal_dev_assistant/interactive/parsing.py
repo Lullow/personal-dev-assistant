@@ -20,7 +20,8 @@ Commands:
   show current file     Show the current file path and preview
   review                Review the current file (or demo_project if none open)
   fix                   Create a pending proposed edit for the current file
-  apply                 Apply the pending edit after explicit approval
+  /apply                Apply the pending edit after explicit approval
+  apply                 Show safety reminder to use /apply
   reject                Clear the pending edit without changing files
   test                  Run pytest on demo_project through the safe bash tool
   tokens                Show token budget / session usage estimate
@@ -54,6 +55,7 @@ _POLITE_PREFIXES: tuple[str, ...] = (
 
 # Longest phrases first so "show project files" wins over "show files".
 _MULTI_WORD_ALIASES: tuple[tuple[str, str], ...] = (
+    ("/apply", "apply_confirm"),
     ("show current file", "current"),
     ("review this file", "review"),
     ("compact context", "compact"),
@@ -106,7 +108,7 @@ _STRICT_SINGLE_COMMANDS: frozenset[str] = frozenset(
         "list",
         "review",
         "fix",
-        "apply",
+        "/apply",
         "reject",
         "test",
         "tokens",

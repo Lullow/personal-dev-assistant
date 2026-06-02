@@ -130,6 +130,10 @@ class InteractiveAssistant:
             self._handle_fix()
             return True
         if name == "apply":
+            self._emit("[STEP] APPLY Applying edits requires explicit `/apply`.")
+            self.session.record_action("apply", "Blocked plain apply; requires /apply.")
+            return True
+        if name == "apply_confirm":
             self._handle_apply()
             return True
         if name == "reject":
@@ -293,7 +297,7 @@ class InteractiveAssistant:
         self._emit("   --- mini diff ---")
         for line in mini_diff.splitlines():
             self._emit(f"   {line}")
-        self._emit("   Pending edit created. Use `apply` to change the file or `reject` to discard.")
+        self._emit("   Pending edit created. Use `/apply` to change the file or `reject` to discard.")
 
         self.session.pending_edit = PendingEdit(
             path=str(proposal.output.get("path", path)),

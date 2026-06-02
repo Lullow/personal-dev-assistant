@@ -45,8 +45,54 @@ def _classifier_for_phrases() -> ScriptedIntentClassifier:
                 confidence="high",
                 reason="User wants the active file.",
             ),
+            "yes": IntentClassification(
+                intent="apply",
+                arg=None,
+                confidence="high",
+                reason="Affirmative confirmation.",
+            ),
+            "ok": IntentClassification(
+                intent="apply",
+                arg=None,
+                confidence="high",
+                reason="Affirmative confirmation.",
+            ),
+            "sure": IntentClassification(
+                intent="apply",
+                arg=None,
+                confidence="high",
+                reason="Affirmative confirmation.",
+            ),
+            "do it": IntentClassification(
+                intent="apply",
+                arg=None,
+                confidence="high",
+                reason="Affirmative confirmation.",
+            ),
+            "go ahead": IntentClassification(
+                intent="apply",
+                arg=None,
+                confidence="high",
+                reason="Affirmative confirmation.",
+            ),
+            "don't apply this": IntentClassification(
+                intent="apply",
+                arg=None,
+                confidence="high",
+                reason="Contains apply keyword.",
+            ),
         }
     )
+
+
+def test_resolve_command_apply_with_llm_intents_skips_llm_fallback():
+    command, message = resolve_command(
+        "apply",
+        llm_intents_enabled=True,
+        intent_classifier=None,
+    )
+    assert command == ParsedCommand(name="apply")
+    assert message is None
 
 
 @pytest.mark.parametrize(
@@ -55,6 +101,8 @@ def _classifier_for_phrases() -> ScriptedIntentClassifier:
         ("fix it", "fix"),
         ("review it", "review"),
         ("show current file", "current"),
+        ("apply", "apply"),
+        ("/apply", "apply_confirm"),
     ],
 )
 def test_strict_deterministic_match_recognizes_aliases(line, expected):
@@ -142,6 +190,18 @@ def test_parse_intent_json_accepts_valid_payload():
     assert message is None
 
 
+def test_classification_to_command_blocks_apply_intent():
+    classification = IntentClassification(
+        intent="apply",
+        arg=None,
+        confidence="high",
+        reason="User asked to apply.",
+    )
+    name, _arg, message = classification_to_command(classification)
+    assert name == "unknown"
+    assert message == "Applying edits requires explicit /apply."
+
+
 def test_assistant_without_llm_intents_unchanged_for_fix_it(tmp_path):
     _write_demo_project(tmp_path, calculator_source=BUGGY_CALCULATOR)
     output = StringIO()
@@ -197,3 +257,55 @@ def test_assistant_with_llm_intents_unknown_shows_safe_message(tmp_path):
     if message:
         assistant._emit(f"[STEP] {message}")
     assert "Could not confidently" in message
+
+
+def test_llm_classified_apply_does_not_apply_and_returns_safe_message(tmp_path):
+    _write_demo_project(tmp_path, calculator_source=BUGGY_CALCULATOR)
+    output = StringIO()
+    assistant = _assistant(
+        tmp_path,
+        output=output,
+        llm_intents_enabled=True,
+        intent_classifier=_classifier_for_phrases(),
+    )
+    assistant.handle(ParsedCommand(name="read", arg="demo_project/calculator.py"))
+    assistant.handle(ParsedCommand(name="fix"))
+
+    command, message = resolve_command(
+        "yes",
+        llm_intents_enabled=True,
+        intent_classifier=_classifier_for_phrases(),
+    )
+    assert command == ParsedCommand(name="unknown")
+    assert message == "Applying edits requires explicit /apply."
+    if message:
+        assistant._emit(f"[STEP] {message}")
+
+    assert assistant.session.pending_edit is not None
+    calculator_text = (tmp_path / "demo_project/calculator.py").read_text(encoding="utf-8")
+    assert BUGGY_CALCULATOR == calculator_text
+    assert "Applying edits requires explicit /apply." in output.getvalue()
+
+
+@pytest.mark.parametrize(
+    "phrase",
+    ["yes", "ok", "sure", "do it", "go ahead", "don't apply this"],
+)
+def test_vague_confirmations_do_not_apply_with_llm_intents(tmp_path, phrase):
+    _write_demo_project(tmp_path, calculator_source=BUGGY_CALCULATOR)
+    assistant = _assistant(
+        tmp_path,
+        output=StringIO(),
+        llm_intents_enabled=True,
+        intent_classifier=_classifier_for_phrases(),
+    )
+    assistant.handle(ParsedCommand(name="read", arg="demo_project/calculator.py"))
+    assistant.handle(ParsedCommand(name="fix"))
+
+    command, _message = resolve_command(
+        phrase,
+        llm_intents_enabled=True,
+        intent_classifier=_classifier_for_phrases(),
+    )
+    assert command == ParsedCommand(name="unknown")
+    assert assistant.session.pending_edit is not None
