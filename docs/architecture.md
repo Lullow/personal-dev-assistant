@@ -7,7 +7,8 @@ Det här dokumentet beskriver arkitekturen på hög nivå för Personal Dev Assi
 ```text
 User
   |
-  +--> Interactive Assistant v.2 (chat)     [primär demo-väg, deterministisk]
+  +--> Interactive Assistant v.2.1 (chat)   [primär demo-väg, deterministisk]
+  |       optional: --llm-intents (klassificering only)
   +--> Deterministic demo runner             [alternativ one-shot demo]
   +--> Experimental run-agent --llm          [valfri, API-nyckel]
   |
@@ -28,9 +29,9 @@ Safety Checker
 
 Main agent är systemets samordnare. Den tar emot användarens uppgift, avgör vad som behöver göras och väljer om den ska svara direkt eller använda tools och sub-agenter. Används i experimentellt `run-agent --llm`-läge.
 
-## Interactive Assistant v.2 (chat)
+## Interactive Assistant v.2.1 (chat)
 
-Primär presentationsväg — **ingen API-nyckel**.
+Primär presentationsväg — **ingen API-nyckel** för standardflödet.
 
 Paketet `src/personal_dev_assistant/interactive/`:
 
@@ -38,10 +39,17 @@ Paketet `src/personal_dev_assistant/interactive/`:
 | --- | --- |
 | `session.py` | `InteractiveSession` — current file, pending edit, review, test result, action history |
 | `review.py` | Deterministiska review-subagents: code reviewer, test reasoning agent, fix planner |
-| `assistant.py` | Kommandoloop, tool-anrop, apply/reject, compaction |
-| `parsing.py` | Deterministisk command parser + natural phrases |
+| `assistant.py` | Kommandoloop, tool-anrop, `/apply`/reject, compaction |
+| `parsing.py` | Deterministisk command parser + natural phrases; `/apply` vs plain `apply` |
+| `intents.py` | Valfri LLM intent-klassificering (`--llm-intents`) — routing only, inga tool calls |
 
-Typiskt flöde: `open` → `review` → `fix it` (pending edit) → `apply` (partial_edit) → `run tests`.
+**Parsing pipeline:** `parse_command` (deterministisk) → vid behov `resolve_command` + `IntentClassifier` för tvetydig text → `InteractiveAssistant.handle` → tools + safety.
+
+**Säkerhetsprincip:** intent recognition ≠ action authorization. LLM får inte köra bash eller skriva filer; filändring kräver explicit **`/apply`** via `partial_edit`.
+
+Typiskt flöde: `open` → `review` → `fix it` (pending edit) → **`/apply`** (`partial_edit`) → `run tests`.
+
+Valfritt: `personal-dev-assistant chat --llm-intents` — klassificerar endast tillåtna kommandon; blockerar LLM-`apply` och vaga bekräftelser.
 
 ## Planner / Explorer / Coder / Reviewer (MainAgent)
 
@@ -54,19 +62,19 @@ Implementerade tools:
 - `read_file`, `list_project_files` — säker filinspektion
 - `bash` — godkända kommandon (t.ex. `pytest demo_project`)
 - `partial_edit` — exakt en gång-matchning med safety checks
-- `propose_edit` — validering + reviewer gate; apply endast explicit (`--apply-proposed-edits` eller chat `apply`)
+- `propose_edit` — validering + reviewer gate; apply endast explicit (`--apply-proposed-edits` eller chat **`/apply`**)
 
 ## Context compaction
 
-Long tool/sub-agent output kompakteras innan nästa steg (`context/compaction.py`). Chat v.2 har dessutom session compaction via `compact context` (bevarar current file och pending edit).
+Long tool/sub-agent output kompakteras innan nästa steg (`context/compaction.py`). Chat v.2.1 har dessutom session compaction via `compact context` (bevarar current file och pending edit).
 
 ## Token Monitor
 
-`TokenBudgetMonitor` spårar ungefärlig tokenanvändning, varningar och hard cap. Chat v.2 visar deterministiska session-estimat via `show token usage`.
+`TokenBudgetMonitor` spårar ungefärlig tokenanvändning, varningar och hard cap. Chat v.2.1 visar deterministiska session-estimat via `show token usage`.
 
 ## Safety Checker
 
-Safety checker kontrollerar riskabla operationer innan de körs — bash-kommandon, blockerade paths, filändringar. Experimentellt LLM-läge blockerar direkt `partial_edit`; trace-grounded guards förhindrar falska FINAL-påståenden.
+Safety checker kontrollerar riskabla operationer innan de körs — bash-kommandon, blockerade paths, filändringar. Chat kräver **`/apply`** för filändring (inte LLM intent). Experimentellt LLM-läge blockerar direkt `partial_edit`; trace-grounded guards förhindrar falska FINAL-påståenden.
 
 ## Experimentellt LLM-läge (valfritt)
 

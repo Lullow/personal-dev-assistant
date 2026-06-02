@@ -2,7 +2,7 @@
 
 Use this script during the VG presentation. It is honest about scope: this is a **school-sized** terminal assistant, not a full Claude Code replacement.
 
-**Recommended path:** run **`personal-dev-assistant chat`** (Interactive Assistant v.2, no API key). Alternative: **deterministic demo runner** (one-shot script). Optional: **`run-agent --llm`** for experimental live LLM use with API key — not the primary demo route.
+**Recommended path:** run **`personal-dev-assistant chat`** (Interactive Assistant v.2.1, no API key). Alternative: **deterministic demo runner** (one-shot script). Optional: **`chat --llm-intents`** for ambiguous natural-language routing (API key; tools still deterministic). Optional: **`run-agent --llm`** for experimental live LLM agent — not the primary demo route.
 
 Estimated time: **8–12 minutes**.
 
@@ -87,7 +87,7 @@ pip install -e ".[dev]"
 python -m pytest tests
 ```
 
-Expected: **294 passed**.
+Expected: **322 passed**.
 
 **Run deterministic demo (main presentation):**
 
@@ -224,21 +224,21 @@ Exit code **0** = success.
 
 ---
 
-## 8b. Interactive Assistant v.2 (primary live demo)
+## 8b. Interactive Assistant v.2.1 (primary live demo)
 
-**Start here for the VG presentation** — no API key required.
+**Start here for the VG presentation** — no API key required for the default flow.
 
 ```bash
 personal-dev-assistant chat
 ```
 
-### Recommended v.2 flow
+### Recommended v.2.1 flow
 
 ```text
 > open demo_project/calculator.py
 > review it
 > fix it
-> apply
+> /apply
 > run tests
 > show token usage
 > compact context
@@ -250,14 +250,30 @@ personal-dev-assistant chat
 1. **open** — safe read; sets current file in session state.
 2. **review it** — main assistant delegates to deterministic **code reviewer**, **test reasoning agent**, and **fix planner**; explains `add()` subtracts instead of adds.
 3. **fix it** — creates **pending proposed edit** + **mini diff**; file **not** changed yet (`propose_edit` validation + reviewer gate).
-4. **apply** — user explicitly approves; **`partial_edit`** applies `return a - b` → `return a + b`.
+4. **`/apply`** — explicit slash command authorizes the change; **`partial_edit`** applies `return a - b` → `return a + b`. Plain `apply` only reminds you to use `/apply`.
 5. **run tests** — safe `pytest demo_project`; tests pass.
 6. **show token usage** — session budget / local estimate.
 7. **compact context** — trims action history; keeps current file and pending-edit summary.
 
 **Restore** `demo_project/calculator.py` to `return a - b` after the demo if you want to repeat.
 
-Say clearly: **deterministic, stateful session** — not free-form LLM chat. Natural phrases map to the same safe commands.
+Say clearly: **deterministic, stateful session** by default — not free-form LLM chat. Natural phrases map to safe commands; **file changes need `/apply`**.
+
+### Slash-apply safety (mention if asked)
+
+- **Intent recognition ≠ action authorization** — understanding “yes” or “apply” in text is not permission to write files.
+- LLM-classified `apply` is **blocked**; vague phrases (`yes`, `ok`, `sure`, `do it`, `go ahead`, `don't apply this`) never apply edits.
+- `fix` only creates a pending edit; `reject` clears it without writes.
+
+### Optional: LLM intent parsing
+
+```bash
+personal-dev-assistant chat --llm-intents
+```
+
+- Deterministic parser runs first; LLM only classifies **ambiguous** input into allowed commands.
+- LLM does **not** execute tools, generate bash, or write files — handlers stay the same.
+- Still use **`/apply`** for any disk change during the live demo.
 
 ### Alternative: one-shot deterministic demo
 
@@ -284,7 +300,7 @@ Point out **AGENT TRACE**, trace-grounded guards (no false test/edit claims), an
 - **Clear scope** — small, understandable demo project.
 - **Safety first** — commands and paths checked before tools run.
 - **Honest architecture** — main agent, sub-agents, tools, context, budget are separate layers.
-- **Tested** — 294 automated tests including safety, tools, agents, interactive v.2, and experimental run-agent.
+- **Tested** — 322 automated tests including safety, tools, agents, interactive v.2.1, and experimental run-agent.
 - **Repeatable** — deterministic demo; Docker for another machine; no API key for demo.
 - **Documentation** — requirements, architecture, safety, dev log, README.
 
@@ -293,7 +309,7 @@ Point out **AGENT TRACE**, trace-grounded guards (no false test/edit claims), an
 ## 10. Weaknesses / limitations (say these proactively)
 
 - **Not a production Claude Code replacement** — limited to small, local workflows.
-- **Deterministic chat v.2 is the primary demo** — stateful session with pending edits and explicit `apply`; not free-form LLM.
+- **Deterministic chat v.2.1 is the primary demo** — stateful session with pending edits and explicit **`/apply`**; optional `--llm-intents` does not replace tool safety.
 - **Experimental LLM mode is optional** — requires API key; trace-grounded guards; reviewer gate; `chat`/demo remain primary paths.
 - **Sub-agents are sequential** — no parallel execution.
 - **Small demo only** — one intentional bug, one-line fix; not large refactors.
@@ -309,7 +325,10 @@ Korta svar jag kan använda om jag blir osäker — fakta är desamma, men formu
 **Jag kan svara ungefär så här:** Ja. I experimentellt läge kan `MainAgent` anropa `planner`, `explorer`, `coder` och `reviewer` via `ACTION: subagents`. I `chat` v.2 visar jag deterministiska review-subagents (code reviewer, test agent, fix planner) som main assistant sammanfattar. Live-demo fokuserar på det tydliga verktygsflödet.
 
 **F: Hur stoppar ni farliga kommandon?**  
-**Jag kan svara ungefär så här:** En safety checker körs innan tools. Destruktiva kommandon som `rm -rf` blockeras, och känsliga paths som `.env` får inte läsas eller ändras. Samma regler gäller i demo, chat och experimentellt LLM-läge.
+**Jag kan svara ungefär så här:** En safety checker körs innan tools. Destruktiva kommandon som `rm -rf` blockeras, och känsliga paths som `.env` får inte läsas eller ändras. I chat kräver filändring explicit **`/apply`** — vaga “ja” eller LLM-klassificerat apply räcker inte. Intent recognition är inte samma sak som action authorization.
+
+**F: Vad gör `--llm-intents` i chat?**  
+**Jag kan svara ungefär så här:** Det klassificerar bara tvetydig text till tillåtna kommandon. Verktyg körs fortfarande deterministiskt och säkert. LLM kan inte köra bash eller skriva filer; `/apply` krävs för ändring på disk.
 
 **F: Hur hanterar ni lång tool-output / context?**  
 **Jag kan svara ungefär så här:** Långa observationer kompakteras deterministiskt (start + slut + metadata). I chat v.2 kan jag köra `compact context` så att viktig session state (current file, pending edit) behålls men action history trimmas.
@@ -338,8 +357,8 @@ Det här är ordningen jag själv följer — hellre lugn och tydlig än att str
 1. **Kort pitch + problem** (ca 30 s) — vad projektet gör och varför safety/context spelar roll.
 2. **Arkitektur** (ca 1 min) — peka på `docs/architecture.md` eller skissa User → chat/demo/LLM → tools → safety.
 3. **VG-krav** (ca 1 min) — snabb genomgång av tabellen i detta script eller `docs/requirements.md`.
-4. **`pytest tests`** (ca 1 min) — visa **294 passed** för trovärdighet.
-5. **`personal-dev-assistant chat`** (ca 4–5 min) — **huvuddemo**: open → review → fix → apply → run tests → token usage → compact → exit.
+4. **`pytest tests`** (ca 1 min) — visa **322 passed** för trovärdighet.
+5. **`personal-dev-assistant chat`** (ca 4–5 min) — **huvuddemo**: open → review → fix → **/apply** → run tests → token usage → compact → exit.
 6. **Valfritt** (ca 1–2 min) — `demo.runner` one-shot eller kort `run-agent --llm` om tid och nyckel finns.
 7. **Styrkor + begränsningar** (ca 1 min) — säg proaktivt vad som *inte* är Claude Code (sektion 10).
 8. **Frågor** — använd sektion 11 om något dyker upp.

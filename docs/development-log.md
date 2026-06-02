@@ -694,6 +694,34 @@ YYYY-MM-DD
 
 - v.2 review är fortfarande deterministisk och demo-pattern-fokuserad, inte en fullständig general Claude Code-klon.
 
+### 2026-06-02 - Interactive Assistant v.2.1 (LLM intents + slash-apply)
+
+#### Vad som implementerades
+
+- Lade till valfri LLM intent parsing för chat:
+  `personal-dev-assistant chat --llm-intents`
+- Deterministisk parser förblir standard och första pass; primär demo-väg utan API-nyckel.
+- LLM intent parsing används endast för att klassificera tvetydig naturlig text till tillåtna interna kommandon (`help`, `list`, `read`, `current`, `review`, `fix`, `reject`, `test`, `tokens`, `compact`, `exit`, `unknown`).
+- LLM kör inga tools direkt, genererar inga godtyckliga bash-kommandon och skriver inga filer — alla åtgärder går via befintliga säkra handlers i `InteractiveAssistant`.
+- Känslig filändring kräver explicit slash-kommando: `/apply`.
+- Vanligt `apply` visar endast säkerhetspåminnelse: `Applying edits requires explicit /apply.`
+- LLM-klassificerat `apply` blockeras; vaga bekräftelser (`yes`, `ok`, `sure`, `do it`, `go ahead`, `don't apply this`) kan inte applicera pending edits.
+- Säkerhetsprincip dokumenterad: intent recognition ≠ action authorization.
+- Uppdaterat demo-flöde: `open` → `review it` → `fix it` → `/apply` → `run tests` → `show token usage` → `compact context` → `exit`.
+
+#### Produktnytta
+
+- Mer naturlig inmatning i chat utan att tumma på deterministisk verktygskörning eller explicit användargodkännande vid filändring.
+
+#### Tester
+
+- Kördes: `./.venv/bin/python -m pytest tests`
+- Resultat: 322 passed.
+
+#### Begränsning / nästa steg
+
+- LLM intent parsing kräver API-nyckel när den används; standarddemo förblir deterministisk utan `--llm-intents`.
+
 ### YYYY-MM-DD
 
 ### Vad jag gjorde

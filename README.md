@@ -31,12 +31,12 @@ The included demo project (`demo_project/`) contains an intentional bug in `calc
 | Main agent loop (`MainAgent`) | Implemented |
 | Sub-agent orchestration (`planner`, `explorer`, `coder`, `reviewer`) | Implemented (sequential) |
 | Deterministic demo runner | Implemented |
-| Interactive terminal mode (`chat`) — **Interactive Assistant v.2** | Implemented (stateful session, deterministic review, pending edits; no API key) |
+| Interactive terminal mode (`chat`) — **Interactive Assistant v.2.1** | Implemented (stateful session, deterministic review, pending edits, optional `--llm-intents`; `/apply` for file changes; no API key for default demo) |
 | Experimental LLM agent mode (`run-agent --llm`) | Implemented (optional, restricted, requires API key; trace-grounded guards; safe `propose_edit` by default) |
 | LLM-backed free-form chat | **Not implemented** |
 | Docker packaging | Implemented |
 
-**294 tests** currently pass.
+**322 tests** currently pass.
 
 For implementation history, see [`docs/development-log.md`](docs/development-log.md).
 
@@ -146,7 +146,7 @@ Or:
 docker compose run --rm test
 ```
 
-Expected result: **294 passed**.
+Expected result: **322 passed**.
 
 ### Run the deterministic demo in Docker
 
@@ -225,7 +225,7 @@ Or, if installed:
 pytest tests
 ```
 
-Expected result: **294 passed**.
+Expected result: **322 passed**.
 
 ## Run the deterministic demo
 
@@ -284,9 +284,9 @@ Then run the demo again normally.
 
 **If the demo was already run:** the file may currently contain `return a + b`. Running the demo again with default settings restores the bug and re-runs the fix automatically.
 
-## Interactive Assistant v.2 (primary demo path)
+## Interactive Assistant v.2.1 (primary demo path)
 
-**Recommended presentation path:** `personal-dev-assistant chat` — no API key required.
+**Recommended presentation path:** `personal-dev-assistant chat` — no API key required for the default deterministic demo.
 
 Start a stateful, command-driven terminal session:
 
@@ -294,6 +294,12 @@ Start a stateful, command-driven terminal session:
 personal-dev-assistant chat
 # or
 personal-dev-assistant interactive
+```
+
+Optional natural-language intent routing (requires API key; does **not** execute tools directly):
+
+```bash
+personal-dev-assistant chat --llm-intents
 ```
 
 On start you see a short welcome and a hint to type `help`.
@@ -304,7 +310,7 @@ On start you see a short welcome and a hint to type `help`.
 > open demo_project/calculator.py
 > review it
 > fix it
-> apply
+> /apply
 > run tests
 > show token usage
 > compact context
@@ -313,7 +319,7 @@ On start you see a short welcome and a hint to type `help`.
 
 After the demo, restore `demo_project/calculator.py` to `return a - b` if you want to repeat the flow.
 
-### What v.2 demonstrates
+### What v.2.1 demonstrates
 
 | Capability | How it works |
 | --- | --- |
@@ -321,14 +327,20 @@ After the demo, restore `demo_project/calculator.py` to `return a - b` if you wa
 | Current file | `open <path>` reads safely and sets the active file |
 | Multi-agent-style review | Deterministic **code reviewer**, **test reasoning agent**, and **fix planner**; main assistant combines results |
 | Pending proposed edit | `fix it` validates via `propose_edit` (no disk write); shows **mini diff** |
-| Explicit approval | `apply` writes only after your command, through safe **`partial_edit`** |
+| Explicit file change | **`/apply`** only — writes through safe **`partial_edit`** after your slash command |
+| Plain `apply` reminder | Typing `apply` without `/` shows: applying edits requires explicit `/apply` |
 | Reject | `reject` clears pending edit without changing files |
 | Safe tests | `run tests` runs `pytest demo_project` via the bash tool |
 | Token display | `show token usage` shows session budget / local estimate |
 | Context compaction | `compact context` trims history while preserving file, pending edit, and review summary |
+| Optional LLM intents | `--llm-intents` classifies ambiguous phrases into allowed commands only |
 
-Natural phrases work with deterministic parsing (not LLM), for example:
+**Security principle:** intent recognition is not the same as action authorization. The LLM may suggest a command name; sensitive file changes still require explicit **`/apply`**.
+
+Natural phrases work with **deterministic parsing** by default (no LLM), for example:
 `show current file`, `can you review it`, `fix the bug`, `run pytest`, `budget`.
+
+With `--llm-intents`, ambiguous input may be classified (e.g. “can you help me fix this bug?” → `fix`), but the LLM never runs bash, never writes files, and cannot apply edits — including when it classifies `apply` (blocked with a safe message).
 
 | Command | Action |
 | --- | --- |
@@ -339,13 +351,14 @@ Natural phrases work with deterministic parsing (not LLM), for example:
 | `show current file` | Show current path and content preview |
 | `review` | Review current file (or demo_project if none open) |
 | `fix` / `fix it` | Create pending proposed edit + mini diff (no file change) |
-| `apply` | Apply pending edit via safe `partial_edit` |
+| `/apply` | Apply pending edit via safe `partial_edit` |
+| `apply` | Safety reminder to use `/apply` (no file change) |
 | `reject` | Clear pending edit |
 | `test` / `run tests` | Run `pytest demo_project` |
 | `tokens` / `show token usage` | Show token budget status |
 | `compact context` | Compact session history |
 
-Implementation lives under `src/personal_dev_assistant/interactive/` (`assistant.py`, `session.py`, `review.py`, `parsing.py`).
+Implementation lives under `src/personal_dev_assistant/interactive/` (`assistant.py`, `session.py`, `review.py`, `parsing.py`, `intents.py`).
 
 ### Deterministic demo runner (alternative path)
 
@@ -357,7 +370,7 @@ python -m personal_dev_assistant.demo.runner
 personal-dev-assistant-demo
 ```
 
-It auto-runs list → read → pytest → fix → compileall → pytest with no user input. Use **chat v.2** when you want to show session state, user approval, and subagent-style review step by step.
+It auto-runs list → read → pytest → fix → compileall → pytest with no user input. Use **chat v.2.1** when you want to show session state, explicit `/apply` approval, and subagent-style review step by step.
 
 ## Experimental LLM agent mode (optional)
 
@@ -392,7 +405,7 @@ What it does:
 
 In experimental LLM mode, the model may propose a change with `ACTION: propose_edit` instead of editing files directly. By default, proposals are **validated but not applied** — the file on disk stays unchanged.
 
-**Primary demo:** use `personal-dev-assistant chat` (Interactive v.2) or `python -m personal_dev_assistant.demo.runner` (no API key). Experimental `run-agent` is for showing a real LLM loop when you have a key.
+**Primary demo:** use `personal-dev-assistant chat` (Interactive v.2.1) or `python -m personal_dev_assistant.demo.runner` (no API key). Experimental `run-agent` is for showing a real LLM loop when you have a key.
 
 #### Review only (default)
 
@@ -462,7 +475,7 @@ personal-dev-assistant/
 ├── src/personal_dev_assistant/
 │   ├── agents/              # Main agent + sub-agent runner
 │   ├── demo/                # Deterministic demo runner
-│   ├── interactive/       # Interactive Assistant v.2 (chat session)
+│   ├── interactive/       # Interactive Assistant v.2.1 (chat session, optional intents)
 │   ├── tools/               # read_file, bash, partial_edit, propose_edit, ...
 │   ├── safety/              # Command/path safety checks
 │   ├── context/             # Output compaction
@@ -476,7 +489,7 @@ personal-dev-assistant/
 Be honest about scope — this is a course-sized assistant, not production tooling.
 
 - **Not a full Claude Code replacement.** It targets a small, demo-friendly workflow.
-- **Interactive v.2 is deterministic** — session state and subagent-style review are scripted; not free-form LLM chat.
+- **Interactive v.2.1 is deterministic by default** — session state and subagent-style review are scripted; optional `--llm-intents` only routes commands; not free-form LLM chat.
 - **Sub-agents run sequentially**, not in parallel (in `MainAgent`; chat uses deterministic review subagents).
 - **Experimental LLM mode is restricted** — read/list/bash/propose_edit/finish; direct `partial_edit` blocked; trace-grounded final guards; apply only via `--apply-proposed-edits` for low/medium risk.
 - **Chat and deterministic demo are the primary presentation paths** — no API key required.
@@ -485,10 +498,10 @@ Be honest about scope — this is a course-sized assistant, not production tooli
 ## Suggested VG presentation flow
 
 1. Show the repo structure and `docs/requirements.md`.
-2. Run `pytest tests` (locally or with `docker compose run --rm test`) — **294 passed**.
-3. Run **`personal-dev-assistant chat`** (primary path) with the v.2 flow:
-   - open → review → fix → apply → run tests → token usage → compact context
-   - no API key; shows session state, subagents, pending edit, user approval, safety
+2. Run `pytest tests` (locally or with `docker compose run --rm test`) — **322 passed**.
+3. Run **`personal-dev-assistant chat`** (primary path) with the v.2.1 flow:
+   - open → review → fix → **/apply** → run tests → token usage → compact context
+   - no API key; shows session state, subagents, pending edit, explicit slash approval, safety
 4. Optionally run `python -m personal_dev_assistant.demo.runner` for the one-shot scripted demo.
 5. Optionally mention experimental `run-agent --llm` (API key, trace output, reviewer gate) — not required for VG.
 

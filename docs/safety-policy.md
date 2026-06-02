@@ -86,6 +86,17 @@ Partial edits must follow these rules:
 
 For the demo, the expected safe edit is a single-line fix in `demo_project/calculator.py`.
 
+## Interactive Assistant chat: slash-apply and intent safety
+
+In `personal-dev-assistant chat` (Interactive Assistant v.2.1):
+
+- **Intent recognition is not action authorization.** Classifying user text (deterministically or via optional `--llm-intents`) only selects an internal command name. It does not grant permission to modify files.
+- **File changes require explicit `/apply`.** The slash command is the authorization step after a pending edit exists. Plain `apply` shows a reminder only and does not write to disk.
+- **LLM-classified `apply` is blocked** with a safe message. Vague confirmations (`yes`, `ok`, `sure`, `do it`, `go ahead`, `don't apply this`) must not apply edits, even when `--llm-intents` is enabled.
+- **`fix` is non-destructive** — it creates a pending proposed edit through `propose_edit` validation; **`reject`** clears pending state without writes.
+- **Optional `--llm-intents`** may only map ambiguous natural language to allowed commands (`help`, `list`, `read`, `current`, `review`, `fix`, `reject`, `test`, `tokens`, `compact`, `exit`, `unknown`). The LLM must not execute tools, invent bash commands, or write files. All actions still pass through existing safe handlers and the same `partial_edit` rules.
+- **Deterministic parsing remains the default** and first pass; it is the primary demo path without an API key.
+
 ## Proposed edit safety rules (experimental LLM mode)
 
 In experimental LLM mode, the model may use `ACTION: propose_edit` instead of calling `partial_edit` directly.
