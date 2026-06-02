@@ -38,12 +38,11 @@ Natural phrases also work (deterministic parsing, not LLM):
   compact context, compact history
 """.strip()
 
-WELCOME_TITLE = "Personal Dev Assistant — Interactive v.2"
+WELCOME_TITLE = "Personal Dev Assistant — Interactive v.2.1"
 WELCOME_NOTE = (
-    "Stateful terminal coding assistant. Open a file, review it, propose a fix, "
-    "then apply only when you say so. Type help for commands."
+    "Demo flow: open → review → fix → /apply → run tests. Type help for commands."
 )
-READY_MESSAGE = "Ready when you are."
+READY_MESSAGE = ""
 
 # Longest prefixes first so "please can you" wins over "please".
 _POLITE_PREFIXES: tuple[str, ...] = (

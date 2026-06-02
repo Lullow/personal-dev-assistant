@@ -178,7 +178,9 @@ def test_welcome_messages_mention_help():
 
     assert WELCOME_TITLE in text
     assert WELCOME_NOTE in text
-    assert READY_MESSAGE in text
+    if READY_MESSAGE:
+        assert READY_MESSAGE in text
+    assert "/apply" in text
     assert "help" in text.lower()
 
 
@@ -241,10 +243,10 @@ def test_review_current_file_reports_add_subtract_bug(tmp_path):
     assistant.handle(parse_command("can you review it"))
     text = output.getvalue()
 
-    assert "[CODE REVIEWER]" in text
-    assert "[TEST AGENT]" in text
-    assert "[FIX PLANNER]" in text
-    assert "[MAIN ASSISTANT]" in text
+    assert "[REVIEW]" in text
+    assert "code reviewer:" in text
+    assert "test agent:" in text
+    assert "fix planner:" in text
     assert "subtract" in text.lower()
     assert FIXED_RETURN in text
     assert assistant.session.last_review_summary is not None
@@ -266,9 +268,10 @@ def test_fix_creates_pending_edit_without_modifying_file(tmp_path):
     assistant.handle(parse_command("fix it"))
     text = output.getvalue()
 
-    assert "PROPOSED EDIT" in text
-    assert "mini diff" in text.lower()
-    assert "apply" in text.lower()
+    assert "[PROPOSED EDIT]" in text
+    assert "Diff:" in text
+    assert "Risk:" in text
+    assert "/apply" in text
     assert assistant.session.pending_edit is not None
     assert assistant.session.pending_edit.path == CALCULATOR_PATH
     calculator_text = (tmp_path / CALCULATOR_PATH).read_text(encoding="utf-8")
@@ -305,7 +308,7 @@ def test_apply_without_slash_does_not_modify_file_and_shows_hint(tmp_path):
     assert BUGGY_RETURN in calculator_text
     assert FIXED_RETURN not in calculator_text
     assert assistant.session.pending_edit is not None
-    assert "requires explicit `/apply`" in output.getvalue()
+    assert "requires explicit /apply" in output.getvalue()
 
 
 def test_reject_clears_pending_edit_without_modifying_file(tmp_path):
@@ -350,9 +353,10 @@ def test_handle_tokens_shows_budget_status(tmp_path):
     assistant.handle(ParsedCommand(name="tokens"))
     text = output.getvalue()
 
-    assert "TOKEN BUDGET" in text
-    assert "Total tokens used:" in text
-    assert "Remaining budget:" in text
+    assert "[TOKENS]" in text
+    assert "Used:" in text
+    assert "Input/output:" in text
+    assert "Mode: deterministic local estimate" in text
 
 
 def test_compact_context_preserves_current_file_and_pending_edit(tmp_path):

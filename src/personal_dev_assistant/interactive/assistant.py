@@ -67,12 +67,10 @@ class InteractiveAssistant:
     def print_welcome(self) -> None:
         self._emit(WELCOME_TITLE)
         self._emit(WELCOME_NOTE)
-        self._emit("Type help to see available commands.")
         if self.llm_intents_enabled:
-            self._emit(
-                "Optional LLM intent parsing is enabled — tools still run through safe handlers."
-            )
-        self._emit(READY_MESSAGE)
+            self._emit("LLM intents on (routing only); file changes still need /apply.")
+        if READY_MESSAGE:
+            self._emit(READY_MESSAGE)
 
     def run_loop(self) -> int:
         self.print_welcome()
@@ -130,7 +128,7 @@ class InteractiveAssistant:
             self._handle_fix()
             return True
         if name == "apply":
-            self._emit("[STEP] APPLY Applying edits requires explicit `/apply`.")
+            self._emit("[STEP] APPLY Applying edits requires explicit /apply.")
             self.session.record_action("apply", "Blocked plain apply; requires /apply.")
             return True
         if name == "apply_confirm":
@@ -216,7 +214,6 @@ class InteractiveAssistant:
 
     def _handle_review(self) -> None:
         self._record_agent_tokens("review", input_tokens=80, output_tokens=40)
-        self._emit("[MAIN ASSISTANT] Delegating review to deterministic subagents...")
 
         path, content = self._current_file_or_demo()
         if path is None or content is None:
@@ -227,27 +224,19 @@ class InteractiveAssistant:
         combined = review_current_file(path=path, content=content)
         self.session.last_review_summary = combined.summary
 
-        self._emit("[CODE REVIEWER]")
-        self._emit(f"   {combined.code_reviewer.summary}")
-        self._emit(f"   Finding: {combined.code_reviewer.finding}")
+        self._emit(f"[REVIEW] {path}")
+        self._emit(f"  code reviewer: {combined.code_reviewer.summary}")
         self._record_agent_tokens("code_reviewer", input_tokens=50, output_tokens=25)
-
-        self._emit("[TEST AGENT]")
-        self._emit(f"   {combined.test_agent.summary}")
-        self._emit(f"   Finding: {combined.test_agent.finding}")
+        self._emit(f"  test agent: {combined.test_agent.summary}")
         self._record_agent_tokens("test_agent", input_tokens=50, output_tokens=25)
-
-        self._emit("[FIX PLANNER]")
-        self._emit(f"   {combined.fix_planner.summary}")
-        self._emit(f"   Recommendation: {combined.fix_planner.recommendation}")
+        self._emit(f"  fix planner: {combined.fix_planner.recommendation}")
         self._record_agent_tokens("fix_planner", input_tokens=50, output_tokens=25)
 
-        self._emit("[MAIN ASSISTANT] Review summary:")
         if BUGGY_RETURN in content:
-            self._emit("   add() subtracts instead of adding.")
-            self._emit(f"   Suggested fix: change `{BUGGY_RETURN}` to `{FIXED_RETURN}`.")
+            self._emit(f"  bug: add() subtracts instead of adding.")
+            self._emit(f"  fix: change `{BUGGY_RETURN}` to `{FIXED_RETURN}`.")
         else:
-            self._emit(f"   {combined.code_reviewer.summary}")
+            self._emit(f"  summary: {combined.code_reviewer.summary}")
         self.session.record_action("review", f"Reviewed {path}.")
 
     def _handle_test(self) -> None:
@@ -256,10 +245,8 @@ class InteractiveAssistant:
         marker = _marker(result.ok)
         self._emit(f"{marker} TEST {result.summary}")
         stdout = str(result.output.get("stdout", "")).strip()
-        if stdout:
-            preview = compact_output(stdout, config=self.app_config).text
-            for line in preview.splitlines()[:8]:
-                self._emit(f"   {line}")
+        for line in _compact_pytest_output(stdout):
+            self._emit(f"   {line}")
         self.session.last_test_result = result.summary
         self.session.record_action("test", result.summary)
 
@@ -287,17 +274,22 @@ class InteractiveAssistant:
             config=self.app_config,
             apply=False,
         )
-        marker = _marker(proposal.ok)
-        self._emit(f"{marker} PROPOSED EDIT {proposal.summary}")
         if not proposal.ok:
+            marker = _marker(proposal.ok)
+            self._emit(f"{marker} PROPOSED EDIT {proposal.summary}")
             self.session.record_action("fix", proposal.summary)
             return
 
+        edit_path = str(proposal.output.get("path", path))
+        risk_level = str(proposal.output.get("risk_level", "unknown") or "unknown")
         mini_diff = str(proposal.output.get("mini_diff", _mini_diff(old_text, new_text)))
-        self._emit("   --- mini diff ---")
+        self._emit(f"[PROPOSED EDIT] {edit_path}")
+        self._emit(f"Risk: {risk_level}")
+        self._emit("Status: reviewed, not applied")
+        self._emit("Diff:")
         for line in mini_diff.splitlines():
-            self._emit(f"   {line}")
-        self._emit("   Pending edit created. Use `/apply` to change the file or `reject` to discard.")
+            self._emit(f"  {line}")
+        self._emit("Next: /apply to apply, reject to discard.")
 
         self.session.pending_edit = PendingEdit(
             path=str(proposal.output.get("path", path)),
@@ -326,10 +318,14 @@ class InteractiveAssistant:
             config=self.app_config,
         )
         marker = _marker(edit.ok)
-        self._emit(f"{marker} APPLY {edit.summary}")
         if not edit.ok:
+            self._emit(f"{marker} APPLY {edit.summary}")
             self.session.record_action("apply", edit.summary)
             return
+
+        self._emit(f"{marker} APPLY Updated {pending.path} via partial_edit.")
+        if edit.summary:
+            self._emit(f"   {edit.summary}")
 
         if pending.path == self.session.current_file_path:
             refreshed = read_file(
@@ -356,18 +352,21 @@ class InteractiveAssistant:
 
     def _handle_tokens(self) -> None:
         status = self.budget_monitor.status()
-        self._emit("[STEP] TOKEN BUDGET")
-        self._emit(f"   Total tokens used: {status.total_tokens_used}")
-        self._emit(f"   Input tokens used: {status.input_tokens_used}")
-        self._emit(f"   Output tokens used: {status.output_tokens_used}")
-        self._emit(f"   Remaining budget: {status.remaining_tokens}")
-        self._emit(f"   Percentage used: {status.percentage_used:.1%}")
-        self._emit(f"   Estimated cost (USD): ${status.estimated_cost_usd:.6f}")
+        max_tokens = self.app_config.token_budget.max_tokens
+        pct = status.percentage_used * 100
+        self._emit("[TOKENS]")
+        self._emit(
+            f"Used: {status.total_tokens_used} / {max_tokens} tokens ({pct:.1f}%)"
+        )
+        self._emit(
+            f"Input/output: {status.input_tokens_used} / {status.output_tokens_used}"
+        )
+        self._emit(f"Estimated cost: ${status.estimated_cost_usd:.6f}")
         if status.warning_reached:
-            self._emit("   Warning threshold reached.")
+            self._emit("Warning: budget threshold reached.")
         if status.message:
-            self._emit(f"   {status.message}")
-        self._emit("   Note: chat mode uses deterministic local estimates unless a live LLM is wired in.")
+            self._emit(f"Note: {status.message}")
+        self._emit("Mode: deterministic local estimate")
         self.session.record_action("tokens", f"{status.total_tokens_used} tokens used.")
 
     def _handle_compact_context(self, *, manual: bool) -> None:
@@ -395,17 +394,34 @@ class InteractiveAssistant:
         self.session.context_summary = "; ".join(summary_parts)
         self.session.action_history = recent
 
+        token_status = self.budget_monitor.status()
         trigger = "manual" if manual else "automatic"
         self._emit(f"[OK] COMPACT Context compacted ({trigger}).")
-        self._emit(f"   Actions before: {before_count} ({before_chars} chars)")
-        self._emit(f"   Actions kept: {len(self.session.action_history)}")
-        if self.session.context_summary:
-            preview = compact_output(
-                self.session.context_summary,
+        self._emit("Preserved:")
+        if self.session.current_file_path:
+            self._emit(f"  current file: {self.session.current_file_path}")
+        else:
+            self._emit("  current file: (none)")
+        pending_summary = self.session.pending_edit_summary()
+        self._emit(f"  pending edit: {pending_summary or '(none)'}")
+        if self.session.last_review_summary:
+            review_line = compact_output(
+                self.session.last_review_summary.splitlines()[0],
                 config=self.app_config,
-                max_chars=300,
+                max_chars=120,
             ).text
-            self._emit(f"   Summary: {preview}")
+            self._emit(f"  last review: {review_line}")
+        else:
+            self._emit("  last review: (none)")
+        if self.session.last_test_result:
+            self._emit(f"  last test: {self.session.last_test_result}")
+        else:
+            self._emit("  last test: (none)")
+        self._emit(f"  tokens used: {token_status.total_tokens_used}")
+        self._emit(
+            f"History: kept {len(self.session.action_history)} actions "
+            f"(was {before_count}, {before_chars} chars)"
+        )
 
     def _maybe_auto_compact(self) -> None:
         if self.session.history_char_count >= self.compaction_threshold:
@@ -489,3 +505,26 @@ def _marker(ok: bool) -> str:
 
 def _mini_diff(old_line: str, new_line: str) -> str:
     return f"- {old_line}\n+ {new_line}"
+
+
+def _compact_pytest_output(stdout: str) -> list[str]:
+    """Return a short pytest summary for terminal display."""
+
+    if not stdout.strip():
+        return []
+
+    highlights: list[str] = []
+    for line in stdout.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if " passed in " in stripped or " failed in " in stripped or " error in " in stripped:
+            highlights = [stripped]
+        elif stripped.startswith("FAILED ") or stripped.startswith("PASSED "):
+            highlights.append(stripped)
+
+    if highlights:
+        return highlights[-2:]
+
+    compact = compact_output(stdout, max_chars=400).text
+    return [line for line in compact.splitlines() if line.strip()][:3]
