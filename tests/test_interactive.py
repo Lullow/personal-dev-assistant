@@ -42,6 +42,8 @@ def _assistant(
     output: StringIO | None = None,
     session: InteractiveSession | None = None,
     compaction_threshold: int = DEFAULT_COMPACTION_THRESHOLD,
+    llm_intents_enabled: bool = False,
+    intent_classifier=None,
 ) -> InteractiveAssistant:
     from personal_dev_assistant.budget import TokenBudgetMonitor
 
@@ -60,6 +62,8 @@ def _assistant(
         output_fn=capture,
         session=session,
         compaction_threshold=compaction_threshold,
+        llm_intents_enabled=llm_intents_enabled,
+        intent_classifier=intent_classifier,
     )
 
 

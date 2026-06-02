@@ -6,16 +6,17 @@ from pathlib import Path
 from typing import Callable
 
 from personal_dev_assistant.budget import TokenBudgetMonitor
-from personal_dev_assistant.config import AppConfig
+from personal_dev_assistant.config import AppConfig, RuntimeConfig
 from personal_dev_assistant.context.compaction import compact_output
 from personal_dev_assistant.demo.runner import BUGGY_RETURN, CALCULATOR_PATH, DEMO_PROJECT_DIR, FIXED_RETURN
+from personal_dev_assistant.interactive.intents import IntentClassifier
 from personal_dev_assistant.interactive.parsing import (
     HELP_TEXT,
     READY_MESSAGE,
     WELCOME_NOTE,
     WELCOME_TITLE,
     ParsedCommand,
-    parse_command,
+    resolve_command,
 )
 from personal_dev_assistant.interactive.review import review_current_file, suggest_fix_for_content
 from personal_dev_assistant.interactive.session import InteractiveSession, PendingEdit
@@ -42,6 +43,8 @@ class InteractiveAssistant:
         output_fn: OutputFn,
         session: InteractiveSession | None = None,
         compaction_threshold: int = DEFAULT_COMPACTION_THRESHOLD,
+        llm_intents_enabled: bool = False,
+        intent_classifier: IntentClassifier | None = None,
     ) -> None:
         self.app_config = app_config
         self.project_root = project_root
@@ -50,6 +53,8 @@ class InteractiveAssistant:
         self.output_fn = output_fn
         self.session = session or InteractiveSession()
         self.compaction_threshold = compaction_threshold
+        self.llm_intents_enabled = llm_intents_enabled
+        self.intent_classifier = intent_classifier
 
     @property
     def last_read_path(self) -> str | None:
@@ -62,7 +67,11 @@ class InteractiveAssistant:
     def print_welcome(self) -> None:
         self._emit(WELCOME_TITLE)
         self._emit(WELCOME_NOTE)
-        self._emit(f"Type help to see available commands.")
+        self._emit("Type help to see available commands.")
+        if self.llm_intents_enabled:
+            self._emit(
+                "Optional LLM intent parsing is enabled — tools still run through safe handlers."
+            )
         self._emit(READY_MESSAGE)
 
     def run_loop(self) -> int:
@@ -75,8 +84,20 @@ class InteractiveAssistant:
                 self._emit("Goodbye.")
                 return 0
 
-            command = parse_command(line)
+            command, intent_message = resolve_command(
+                line,
+                llm_intents_enabled=self.llm_intents_enabled,
+                intent_classifier=self.intent_classifier,
+            )
             if command is None:
+                continue
+            if command.name == "unknown":
+                if intent_message:
+                    self._emit(f"[STEP] {intent_message}")
+                else:
+                    self._emit(
+                        "Unknown command. Type 'help' for available commands."
+                    )
                 continue
             if not self.handle(command):
                 self._emit("Goodbye.")
@@ -431,13 +452,29 @@ def run_interactive(
     app_config: AppConfig,
     input_fn: InputFn | None = None,
     output_fn: OutputFn | None = None,
+    llm_intents: bool = False,
+    intent_classifier: IntentClassifier | None = None,
+    runtime_config: RuntimeConfig | None = None,
 ) -> int:
+    from personal_dev_assistant.config import RuntimeConfig, load_runtime_config
+    from personal_dev_assistant.interactive.intents import create_intent_classifier
+
+    budget_monitor = TokenBudgetMonitor(app_config)
+    classifier = intent_classifier
+    llm_intents_enabled = llm_intents
+
+    if llm_intents_enabled and classifier is None:
+        runtime = runtime_config or load_runtime_config()
+        classifier = create_intent_classifier(runtime, budget_monitor=budget_monitor)
+
     assistant = InteractiveAssistant(
         app_config=app_config,
         project_root=Path(project_root).resolve(),
-        budget_monitor=TokenBudgetMonitor(app_config),
+        budget_monitor=budget_monitor,
         input_fn=input_fn or input,
         output_fn=output_fn or print,
+        llm_intents_enabled=llm_intents_enabled,
+        intent_classifier=classifier,
     )
     return assistant.run_loop()
 

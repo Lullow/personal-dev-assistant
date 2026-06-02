@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from personal_dev_assistant.interactive.intents import IntentClassifier
 
 HELP_TEXT = """
 Interactive Assistant v.2 — deterministic session (no API key required)
@@ -83,8 +87,35 @@ _READ_PREFIXES: frozenset[str] = frozenset({"read", "open", "show", "cat", "insp
 
 # Paths that must not be treated as file reads when using a read-style verb.
 _READ_PATH_BLOCKLIST: frozenset[str] = frozenset(
-    {"files", "project files", "tokens", "token usage", "current file"}
+    {
+        "files",
+        "project files",
+        "tokens",
+        "token usage",
+        "current file",
+        "what file we are working on",
+        "me what file we are working on",
+    }
 )
+
+_STRICT_SINGLE_COMMANDS: frozenset[str] = frozenset(
+    {
+        "help",
+        "exit",
+        "quit",
+        "list",
+        "review",
+        "fix",
+        "apply",
+        "reject",
+        "test",
+        "tokens",
+        "compact",
+        "current",
+    }
+)
+
+_HANDLER_COMMANDS: frozenset[str] = _STRICT_SINGLE_COMMANDS | {"read"}
 
 
 @dataclass(frozen=True)
@@ -131,3 +162,69 @@ def parse_command(line: str) -> ParsedCommand | None:
         return ParsedCommand(name="read", arg=arg)
 
     return ParsedCommand(name=verb, arg=arg)
+
+
+def is_strict_deterministic_match(line: str) -> bool:
+    """True when the line is fully resolved by alias or single-token rules."""
+
+    stripped = line.strip()
+    if not stripped:
+        return False
+
+    normalized = _strip_polite_prefix(stripped)
+    lower = normalized.lower()
+
+    for phrase, _command in _MULTI_WORD_ALIASES:
+        if lower == phrase:
+            return True
+
+    if lower in _SINGLE_WORD_ALIASES:
+        return True
+
+    parts = normalized.split(maxsplit=1)
+    verb = parts[0].lower()
+    arg = parts[1].strip() if len(parts) > 1 else None
+
+    if verb in _READ_PREFIXES and arg is not None and arg.lower() not in _READ_PATH_BLOCKLIST:
+        return True
+
+    return len(parts) == 1 and verb in _STRICT_SINGLE_COMMANDS
+
+
+def resolve_command(
+    line: str,
+    *,
+    llm_intents_enabled: bool = False,
+    intent_classifier: IntentClassifier | None = None,
+) -> tuple[ParsedCommand | None, str | None]:
+    """Parse a command line; optionally fall back to LLM intent classification."""
+
+    command = parse_command(line)
+    if command is None:
+        return None, None
+
+    if not llm_intents_enabled:
+        return command, None
+
+    if is_strict_deterministic_match(line):
+        return command, None
+
+    if intent_classifier is None:
+        from personal_dev_assistant.interactive.intents import _INTENT_UNKNOWN_USER_MESSAGE
+
+        return ParsedCommand(name="unknown"), _INTENT_UNKNOWN_USER_MESSAGE
+
+    from personal_dev_assistant.interactive.intents import (
+        _INTENT_UNKNOWN_USER_MESSAGE,
+        classification_to_command,
+    )
+
+    classification = intent_classifier.classify(line.strip())
+    if classification is None:
+        return ParsedCommand(name="unknown"), _INTENT_UNKNOWN_USER_MESSAGE
+
+    intent_name, arg, message = classification_to_command(classification)
+    if intent_name == "unknown":
+        return ParsedCommand(name="unknown"), message
+
+    return ParsedCommand(name=intent_name, arg=arg), None

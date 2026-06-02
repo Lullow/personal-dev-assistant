@@ -34,6 +34,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=".",
         help="Project root for safe tool operations.",
     )
+    chat_parser.add_argument(
+        "--llm-intents",
+        action="store_true",
+        help="Use optional LLM intent parsing when deterministic parsing is ambiguous.",
+    )
 
     interactive_parser = subparsers.add_parser(
         "interactive",
@@ -48,6 +53,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--project-root",
         default=".",
         help="Project root for safe tool operations.",
+    )
+    interactive_parser.add_argument(
+        "--llm-intents",
+        action="store_true",
+        help="Use optional LLM intent parsing when deterministic parsing is ambiguous.",
     )
 
     run_agent_parser = subparsers.add_parser(
@@ -98,10 +108,14 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.mode in {"chat", "interactive"}:
-        app_config = load_app_config(Path(args.config))
+        config_path = Path(args.config)
+        app_config = load_app_config(config_path)
+        runtime_config = load_runtime_config(config_path) if args.llm_intents else None
         return run_interactive(
             project_root=args.project_root,
             app_config=app_config,
+            llm_intents=args.llm_intents,
+            runtime_config=runtime_config,
         )
 
     if args.mode == "run-agent":
