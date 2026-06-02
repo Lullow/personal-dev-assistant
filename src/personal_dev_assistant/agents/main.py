@@ -53,8 +53,10 @@ EXPERIMENTAL_ACTION_PROTOCOL = """
 Experimental LLM mode — strict action protocol
 
 CRITICAL FORMAT RULES:
+- Every model response MUST contain exactly one valid ACTION block.
 - Reply with exactly ONE ACTION block per turn.
 - Do NOT write prose, markdown headings, apologies, refusals, or explanations before ACTION.
+- Do NOT reply with only conversational text — even when blocked, stuck, or unable to proceed.
 - The first non-empty line of your reply MUST start with: ACTION:
 - Do NOT put ACTION and parameters on the same line.
 - Preferred format (action name on the same line as ACTION:):
@@ -69,7 +71,16 @@ CRITICAL FORMAT RULES:
   ACTION: bash command: pytest demo_project
 - Use only the allowed actions listed below.
 - Do NOT use partial_edit or subagents.
-- Never reply with only conversational text. Always use ACTION: finish if the task is done.
+- Never reply with only conversational text. Always use ACTION: finish if the task is done or cannot continue.
+
+When you cannot proceed (CRITICAL):
+- If read_file fails, the path is blocked, path traversal is rejected, or the task cannot continue safely, do NOT output plain prose outside the protocol.
+- You MUST still reply with exactly one ACTION block.
+- Use ACTION: finish with FINAL that truthfully explains what happened and what was NOT done.
+- Do NOT claim a file was read unless read_file succeeded in this session.
+- Example after blocked or failed read_file:
+  ACTION: finish
+  FINAL: read_file blocked for ../README.md (path outside project root). No file content was read.
 
 Allowed actions only:
 - list_project_files
@@ -90,6 +101,8 @@ Trace-grounding rules (CRITICAL):
 - Before ACTION: propose_edit, you MUST call ACTION: read_file on the target file unless its exact content was already observed in this run.
 - Do NOT claim tests failed, tests passed, or pytest results in FINAL unless ACTION: bash ran in this session and the observation contains test output.
 - Do NOT claim you inspected or read a file in FINAL unless ACTION: read_file ran on that file in this run or its content appears in an observation.
+- Never claim in FINAL that you read, opened, inspected, or viewed a file unless ACTION: read_file actually ran in this session.
+- Only describe successful file reads when the read_file observation succeeded; if read was blocked or failed, you may mention that only when the trace shows the failed read_file attempt.
 - Skipping pytest or read_file when the task requires them produces an incomplete trace — follow the recommended flow below.
 
 Fix proposal tasks (MUST use propose_edit):
@@ -98,6 +111,12 @@ Fix proposal tasks (MUST use propose_edit):
 - Do NOT claim a fix was proposed in FINAL unless ACTION: propose_edit was actually used in this run.
 - Do NOT describe a code change only in FINAL — submit it through ACTION: propose_edit so the reviewer gate runs.
 - After ACTION: read_file, when you identify a concrete bug fix and know the exact OLD_TEXT and NEW_TEXT, your NEXT action MUST be ACTION: propose_edit (never ACTION: finish).
+
+Truthfulness rules for file reads (CRITICAL):
+- Never claim in FINAL that you read, opened, inspected, or viewed a file unless ACTION: read_file ran in this session.
+- Do NOT say "I read README.md" or similar after only list_project_files — that is a false claim.
+- If read_file was blocked or failed, FINAL may mention the blocked/failed read only when the trace contains that read_file attempt.
+- If no file was read, say so truthfully in FINAL (e.g. "No file was read in this session") — still using ACTION: finish, never plain prose.
 
 Truthfulness rules for propose_edit (CRITICAL):
 - Never claim in FINAL that a proposed edit was submitted, reviewed, risk-rated, applied, or not applied unless ACTION: propose_edit actually ran in this session.
@@ -167,6 +186,14 @@ Fix add() so it returns the sum.
 ACTION: finish
 FINAL: Tests fail because add() subtracts. Reviewed proposed edit submitted (not applied). Re-run with --apply-proposed-edits to apply.
 
+Example finish after blocked read_file (path outside project):
+
+ACTION: read_file
+PATH: ../README.md
+
+ACTION: finish
+FINAL: read_file blocked for ../README.md (path outside project root). No file content was read.
+
 FINISH action rules (FINAL is required):
 - ACTION: finish MUST always include FINAL: with a concise user-facing summary.
 - Never return only ACTION: finish — a bare finish action without FINAL is not acceptable.
@@ -191,6 +218,11 @@ _FINISH_FALSE_PROPOSE_EDIT_CLAIM_FALLBACK = (
 _FINISH_FALSE_TEST_CLAIM_FALLBACK = (
     "Finished, but no test command was run in this session. "
     "The trace does not support the model's test-result summary."
+)
+
+_FINISH_FALSE_FILE_READ_CLAIM_FALLBACK = (
+    "Finished, but no file was read in this session. "
+    "The trace does not support the model's file-read summary."
 )
 
 _PROPOSE_EDIT_NOT_READ_MESSAGE = (
@@ -230,6 +262,35 @@ _FINAL_CLAIMS_TEST_RESULTS_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"\bpytest\b", re.IGNORECASE),
     re.compile(r"test suite", re.IGNORECASE),
     re.compile(r"test results?", re.IGNORECASE),
+)
+
+_FINAL_NEGATES_FILE_READ_CLAIM = re.compile(
+    r"\b(?:no|not|never|without|didn't|did not|could not|couldn't)\b.{0,40}\b(?:read|opened|inspected|viewed)\b",
+    re.IGNORECASE | re.DOTALL,
+)
+
+_FINAL_CLAIMS_READ_FAILURE_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"\bread\b.{0,40}(?:blocked|failed|rejected|denied|not allowed)", re.IGNORECASE),
+    re.compile(
+        r"\b(?:blocked|failed|rejected|denied)\b.{0,40}\b(?:read|reading|file read)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(r"could not read\b", re.IGNORECASE),
+    re.compile(r"unable to read\b", re.IGNORECASE),
+)
+
+_FINAL_CLAIMS_FILE_READ_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"\bI (?:have )?read\b", re.IGNORECASE),
+    re.compile(r"\bafter reading\b", re.IGNORECASE),
+    re.compile(
+        r"\bread\b.{0,40}(?:file|README|demo_project/|\.py\b|\.md\b|\.txt\b|\.yaml\b|\.json\b)",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:opened|inspected|viewed|looked at)\b.{0,60}(?:file|README|\.py\b|\.md\b|demo_project/)",
+        re.IGNORECASE,
+    ),
+    re.compile(r"\bfile (?:was )?(?:read|opened|inspected|viewed)\b", re.IGNORECASE),
 )
 
 _SECRET_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
@@ -298,6 +359,7 @@ class MainAgent:
         messages = self._initial_messages(task)
         propose_edit_executed = False
         bash_executed = False
+        read_file_occurred = False
         experimental_mode = self._allowed_actions == EXPERIMENTAL_ALLOWED_ACTIONS
 
         while steps < self._max_steps:
@@ -328,6 +390,8 @@ class MainAgent:
                         llm_response.text,
                         propose_edit_occurred=propose_edit_executed,
                         bash_occurred=bash_executed,
+                        read_file_occurred=read_file_occurred,
+                        step_records=step_records,
                     ),
                     steps=steps,
                     stopped_reason="finish",
@@ -442,6 +506,8 @@ class MainAgent:
                 propose_edit_executed = True
             elif action.name == "bash":
                 bash_executed = True
+            elif action.name == "read_file":
+                read_file_occurred = True
             messages = self._build_messages(task, observations)
 
         return MainAgentResult(
@@ -588,12 +654,34 @@ def _final_claims_test_results(final_response: str) -> bool:
     )
 
 
+def _final_claims_read_failure(final_response: str) -> bool:
+    """True when FINAL describes a blocked or failed file read."""
+
+    return any(
+        pattern.search(final_response) for pattern in _FINAL_CLAIMS_READ_FAILURE_PATTERNS
+    )
+
+
+def _final_claims_file_read(final_response: str) -> bool:
+    """True when FINAL text asserts a file was read/opened/inspected/viewed."""
+
+    if _FINAL_NEGATES_FILE_READ_CLAIM.search(final_response):
+        return False
+    if _final_claims_read_failure(final_response):
+        return True
+    return any(
+        pattern.search(final_response) for pattern in _FINAL_CLAIMS_FILE_READ_PATTERNS
+    )
+
+
 def _resolve_finish_final_response(
     action: AgentAction,
     raw_text: str,
     *,
     propose_edit_occurred: bool = False,
     bash_occurred: bool = False,
+    read_file_occurred: bool = False,
+    step_records: list[AgentStepRecord] | None = None,
 ) -> str:
     """Return the model FINAL summary, or a safe fallback when it is missing or untruthful."""
 
@@ -604,6 +692,14 @@ def _resolve_finish_final_response(
         return _FINISH_FALSE_PROPOSE_EDIT_CLAIM_FALLBACK
     if not bash_occurred and _final_claims_test_results(candidate):
         return _FINISH_FALSE_TEST_CLAIM_FALLBACK
+    if _final_claims_file_read(candidate):
+        records = step_records or []
+        read_succeeded = bool(_observed_file_paths(records))
+        if _final_claims_read_failure(candidate):
+            if not read_file_occurred:
+                return _FINISH_FALSE_FILE_READ_CLAIM_FALLBACK
+        elif not read_file_occurred or not read_succeeded:
+            return _FINISH_FALSE_FILE_READ_CLAIM_FALLBACK
     return candidate
 
 

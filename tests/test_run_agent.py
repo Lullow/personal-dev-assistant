@@ -234,6 +234,12 @@ def test_experimental_action_protocol_strict_format_and_examples():
     assert "do not invent" in protocol.lower() or "do not invent them" in protocol.lower()
     assert "Trace-grounding rules" in protocol
     assert "read_file on the target file" in protocol
+    assert "Truthfulness rules for file reads" in protocol
+    assert "Do NOT say \"I read README.md\"" in protocol or "I read README.md" in protocol
+    assert "When you cannot proceed" in protocol
+    assert "plain prose outside the protocol" in protocol.lower()
+    assert "Every model response MUST contain exactly one valid ACTION block" in protocol
+    assert "Example finish after blocked read_file" in protocol
     assert "Do NOT claim tests failed" in protocol or "do not claim tests failed" in protocol.lower()
     assert "unless ACTION: bash ran" in protocol or "ACTION: bash ran" in protocol
 
@@ -448,6 +454,138 @@ def test_final_claims_propose_edit_occurred_detects_false_claims():
     assert not _final_claims_propose_edit_occurred(
         "No proposed edit was submitted in this run."
     )
+
+
+def test_final_claims_file_read_detects_false_claims():
+    from personal_dev_assistant.agents.main import _final_claims_file_read
+
+    assert _final_claims_file_read("I read README.md and found the project overview.")
+    assert _final_claims_file_read("I inspected demo_project/calculator.py for bugs.")
+    assert _final_claims_file_read("I opened the calculator file and reviewed it.")
+    assert _final_claims_file_read("I viewed demo_project/calculator.py.")
+    assert not _final_claims_file_read("Listed project files successfully.")
+    assert not _final_claims_file_read(
+        "No file was read in this session. The trace does not support the summary."
+    )
+
+
+def test_experimental_finish_claiming_file_read_without_read_file_gets_fallback(tmp_path):
+    agent = _experimental_agent(
+        tmp_path,
+        [
+            "ACTION: list_project_files",
+            "ACTION: finish\nFINAL: I read README.md and summarized the project setup.",
+        ],
+    )
+
+    result = agent.run("List project files and summarize README.")
+
+    assert result.stopped_reason == "finish"
+    assert "no file was read in this session" in result.final_response
+    assert "trace does not support" in result.final_response.lower()
+    assert not any(record.action == "read_file" for record in result.step_records)
+
+
+@pytest.mark.parametrize(
+    "final_text",
+    [
+        "I inspected README.md for setup instructions.",
+        "I opened demo_project/calculator.py and reviewed the code.",
+        "I viewed README.md before finishing.",
+    ],
+)
+def test_experimental_finish_inspect_open_view_without_read_file_gets_fallback(
+    tmp_path,
+    final_text: str,
+):
+    agent = _experimental_agent(
+        tmp_path,
+        [
+            "ACTION: list_project_files",
+            f"ACTION: finish\nFINAL: {final_text}",
+        ],
+    )
+
+    result = agent.run("Inspect the project.")
+
+    assert result.stopped_reason == "finish"
+    assert "no file was read in this session" in result.final_response
+
+
+def test_experimental_finish_after_read_file_accepts_file_read_summary(tmp_path):
+    demo_dir = tmp_path / "demo_project"
+    demo_dir.mkdir()
+    target = demo_dir / "calculator.py"
+    target.write_text("return a - b\n", encoding="utf-8")
+    final_text = "I read demo_project/calculator.py and found the subtract bug."
+
+    agent = _experimental_agent(
+        tmp_path,
+        [
+            _read_file_response("demo_project/calculator.py"),
+            f"ACTION: finish\nFINAL: {final_text}",
+        ],
+    )
+
+    result = agent.run("Read calculator.py and summarize.")
+
+    assert result.stopped_reason == "finish"
+    assert result.final_response == final_text
+    assert any(record.action == "read_file" for record in result.step_records)
+
+
+def test_experimental_finish_allows_blocked_read_claim_after_failed_read_file(tmp_path):
+    (tmp_path / ".env").write_text("SECRET=1\n", encoding="utf-8")
+    final_text = "Read blocked for .env due to safety policy."
+
+    agent = _experimental_agent(
+        tmp_path,
+        [
+            "ACTION: read_file\nPATH: .env",
+            f"ACTION: finish\nFINAL: {final_text}",
+        ],
+    )
+
+    result = agent.run("Try to read .env")
+
+    assert result.stopped_reason == "finish"
+    assert result.final_response == final_text
+    assert any(record.action == "read_file" for record in result.step_records)
+
+
+def test_experimental_finish_truthful_no_file_read_after_blocked_path_is_accepted(tmp_path):
+    final_text = (
+        "read_file blocked for ../README.md (path outside project root). "
+        "No file content was read in this session."
+    )
+
+    agent = _experimental_agent(
+        tmp_path,
+        [
+            "ACTION: read_file\nPATH: ../README.md",
+            f"ACTION: finish\nFINAL: {final_text}",
+        ],
+    )
+
+    result = agent.run("Read ../README.md")
+
+    assert result.stopped_reason == "finish"
+    assert result.final_response == final_text
+    assert any(record.action == "read_file" for record in result.step_records)
+
+
+def test_experimental_prose_instead_of_action_still_stops_safely(tmp_path):
+    prose = (
+        "Final cannot be reached because read_file not executed. "
+        "Need to read file first."
+    )
+
+    agent = _experimental_agent(tmp_path, [prose])
+
+    result = agent.run("Read ../README.md")
+
+    assert result.stopped_reason == "invalid_action"
+    assert "could not parse" in result.final_response.lower()
 
 
 def test_experimental_finish_without_final_produces_fallback(tmp_path):
