@@ -13,6 +13,7 @@ from personal_dev_assistant.interactive.intents import IntentClassifier
 from personal_dev_assistant.interactive.parsing import (
     HELP_TEXT,
     READY_MESSAGE,
+    WELCOME_HELP_HINT,
     WELCOME_NOTE,
     WELCOME_TITLE,
     ParsedCommand,
@@ -28,6 +29,8 @@ OutputFn = Callable[[str], None]
 
 DEFAULT_COMPACTION_THRESHOLD = 1_500
 MAX_ACTION_HISTORY_AFTER_COMPACT = 5
+_BOX_WIDTH = 52
+_LINE_SEP = "─" * _BOX_WIDTH
 
 
 class InteractiveAssistant:
@@ -67,16 +70,27 @@ class InteractiveAssistant:
     def print_welcome(self) -> None:
         self._emit(WELCOME_TITLE)
         self._emit(WELCOME_NOTE)
+        self._emit(WELCOME_HELP_HINT)
         if self.llm_intents_enabled:
             self._emit("LLM intents on (routing only); file changes still need /apply.")
         if READY_MESSAGE:
             self._emit(READY_MESSAGE)
 
+    def input_prompt(self) -> str:
+        """Dynamic prompt label for the interactive loop."""
+
+        if not self.session.current_file_path:
+            return "pda > "
+        file_label = Path(self.session.current_file_path).name
+        if self.session.pending_edit is not None:
+            return f"{file_label} [pending edit] > "
+        return f"{file_label} > "
+
     def run_loop(self) -> int:
         self.print_welcome()
         while True:
             try:
-                line = self.input_fn("> ")
+                line = self.input_fn(self.input_prompt())
             except EOFError:
                 self._emit("")
                 self._emit("Goodbye.")
@@ -89,11 +103,13 @@ class InteractiveAssistant:
             )
             if command is None:
                 continue
+
+            self._begin_turn(line.strip())
             if command.name == "unknown":
                 if intent_message:
-                    self._emit(f"[STEP] {intent_message}")
+                    self._emit_main(intent_message)
                 else:
-                    self._emit(
+                    self._emit_main(
                         "Unknown command. Type 'help' for available commands."
                     )
                 continue
@@ -128,7 +144,11 @@ class InteractiveAssistant:
             self._handle_fix()
             return True
         if name == "apply":
-            self._emit("[STEP] APPLY Applying edits requires explicit /apply.")
+            self._emit_safety(
+                "Edits require explicit `/apply`.",
+                "Next: type `/apply` if you want to apply the proposed edit.",
+            )
+            self._emit_state()
             self.session.record_action("apply", "Blocked plain apply; requires /apply.")
             return True
         if name == "apply_confirm":
@@ -144,7 +164,9 @@ class InteractiveAssistant:
             self._handle_compact_context(manual=True)
             return True
 
-        self._emit(f"Unknown command: {command.name}. Type 'help' for available commands.")
+        self._emit_main(
+            f"Unknown command: {command.name}. Type 'help' for available commands."
+        )
         return True
 
     def finalize_command(self) -> None:
@@ -153,30 +175,32 @@ class InteractiveAssistant:
         self._maybe_auto_compact()
 
     def _handle_help(self) -> None:
-        self._emit(HELP_TEXT)
+        self._emit_main("Available commands:")
+        for help_line in HELP_TEXT.splitlines():
+            self._emit(help_line)
         self.session.record_action("help", "Displayed command help.")
 
     def _handle_list(self) -> None:
+        self._emit_main("Listing project files...")
         result = list_project_files(project_root=self.project_root, config=self.app_config)
-        marker = _marker(result.ok)
-        self._emit(f"{marker} LIST {result.summary}")
+        self._emit_tool("LIST_PROJECT_FILES", result.ok, result.summary)
         if result.ok:
             files = result.output.get("files", [])
             preview = ", ".join(files[:8])
             if len(files) > 8:
                 preview = f"{preview}, ..."
-            self._emit(f"   Files: {preview or 'none'}")
+            self._emit(f"Files: {preview or 'none'}")
         self.session.record_action("list", result.summary)
 
     def _handle_open(self, path: str | None) -> None:
         if not path:
-            self._emit("[FAIL] OPEN Missing path. Usage: open <path>")
+            self._emit_main("Missing path. Usage: open <path>")
             return
 
+        self._emit_main("Opening file...")
         result = read_file(path, project_root=self.project_root, config=self.app_config)
-        marker = _marker(result.ok)
-        self._emit(f"{marker} OPEN {result.summary}")
         if not result.ok:
+            self._emit_tool("READ_FILE", result.ok, result.summary)
             self.session.record_action("open", result.summary)
             return
 
@@ -184,16 +208,18 @@ class InteractiveAssistant:
         content = str(result.output.get("content", ""))
         self.session.current_file_path = relative_path
         self.session.current_file_content = content
-        self._emit(f"   Current file: {relative_path}")
-        self._emit("   --- file preview ---")
-        for preview_line in self.session.compact_preview(content).splitlines():
-            self._emit(f"   {preview_line}")
+        self._emit_tool("READ_FILE", result.ok, f"Read {relative_path}")
+        self._emit("")
+        self._emit(f"Current file: {relative_path}")
+        self._emit("")
+        self._emit("Preview:")
+        self._emit_numbered_preview(content)
+        self._emit_state()
         self.session.record_action("open", f"Opened {relative_path} ({len(content)} chars).")
 
     def _handle_show_current_file(self) -> None:
         if not self.session.current_file_path:
-            self._emit("[STEP] CURRENT FILE")
-            self._emit("   No file open. Use: open <path>")
+            self._emit_main("No file open. Use: open <path>")
             self.session.record_action("current", "No current file.")
             return
 
@@ -205,11 +231,11 @@ class InteractiveAssistant:
                 content = str(result.output.get("content", ""))
                 self.session.current_file_content = content
 
-        self._emit("[STEP] CURRENT FILE")
-        self._emit(f"   Path: {path}")
-        self._emit("   --- content preview ---")
-        for preview_line in self.session.compact_preview(content).splitlines():
-            self._emit(f"   {preview_line}")
+        self._emit_main(f"Current file: {path}")
+        self._emit("")
+        self._emit("Preview:")
+        self._emit_numbered_preview(content)
+        self._emit_state()
         self.session.record_action("current", f"Showed {path}.")
 
     def _handle_review(self) -> None:
@@ -217,54 +243,76 @@ class InteractiveAssistant:
 
         path, content = self._current_file_or_demo()
         if path is None or content is None:
-            self._emit("[FAIL] REVIEW No file available to review.")
+            self._emit_main("No file available to review.")
             self.session.record_action("review", "No file available.")
             return
 
         combined = review_current_file(path=path, content=content)
         self.session.last_review_summary = combined.summary
 
-        self._emit(f"[REVIEW] {path}")
-        self._emit(f"  code reviewer: {combined.code_reviewer.summary}")
+        self._emit_main(f"Reviewing {path} with subagents...")
+        self._emit("")
+        self._emit("Agent notes:")
+        self._emit_agent_line("CODE REVIEWER", combined.code_reviewer.summary)
         self._record_agent_tokens("code_reviewer", input_tokens=50, output_tokens=25)
-        self._emit(f"  test agent: {combined.test_agent.summary}")
+        self._emit_agent_line("TEST AGENT", combined.test_agent.summary)
         self._record_agent_tokens("test_agent", input_tokens=50, output_tokens=25)
-        self._emit(f"  fix planner: {combined.fix_planner.recommendation}")
+        fix_hint = (
+            "Create a proposed edit with `fix it`, then apply with `/apply`."
+            if BUGGY_RETURN in content
+            else combined.fix_planner.recommendation
+        )
+        self._emit_agent_line("FIX PLANNER", fix_hint)
         self._record_agent_tokens("fix_planner", input_tokens=50, output_tokens=25)
 
+        self._emit("")
+        self._emit("Summary:")
         if BUGGY_RETURN in content:
-            self._emit(f"  bug: add() subtracts instead of adding.")
-            self._emit(f"  fix: change `{BUGGY_RETURN}` to `{FIXED_RETURN}`.")
+            self._emit("- Bug found in `add()`")
+            self._emit("- Current code subtracts instead of adding")
+            self._emit("- Suggested fix is low risk")
+            self._emit("")
+            self._emit("Next: type `fix it`")
         else:
-            self._emit(f"  summary: {combined.code_reviewer.summary}")
+            self._emit(f"- {combined.code_reviewer.summary}")
+        self._emit_state()
         self.session.record_action("review", f"Reviewed {path}.")
 
     def _handle_test(self) -> None:
         command = f"{self.app_config.tools.test_command} {DEMO_PROJECT_DIR}"
+        self._emit_main(f"Running tests: {command}")
         result = bash(command, project_root=self.project_root, config=self.app_config)
-        marker = _marker(result.ok)
-        self._emit(f"{marker} TEST {result.summary}")
+        self._emit_tool("BASH", result.ok, result.summary)
         stdout = str(result.output.get("stdout", "")).strip()
-        for line in _compact_pytest_output(stdout):
-            self._emit(f"   {line}")
+        pytest_lines = _compact_pytest_output(stdout)
+        if pytest_lines:
+            self._emit("")
+            self._emit("Test result:")
+            self._emit(_LINE_SEP)
+            for line in pytest_lines:
+                self._emit(line)
+            self._emit(_LINE_SEP)
         self.session.last_test_result = result.summary
+        self.session.last_test_passed = result.ok
+        self._emit_state()
         self.session.record_action("test", result.summary)
 
     def _handle_fix(self) -> None:
         self._record_agent_tokens("fix", input_tokens=90, output_tokens=45)
         path, content = self._current_file_or_demo(require_current=True)
         if path is None or content is None:
-            self._emit("[FAIL] FIX Open a file first with: open <path>")
+            self._emit_main("Open a file first with: open <path>")
             self.session.record_action("fix", "No current file.")
             return
 
         suggestion = suggest_fix_for_content(content)
         if suggestion is None:
-            self._emit("[FAIL] FIX No automatic fix available for the current file.")
+            self._emit_main("No automatic fix available for the current file.")
             self.session.record_action("fix", f"No fix suggestion for {path}.")
             return
 
         old_text, new_text, reason = suggestion
+        self._emit_main("Proposing fix...")
         proposal = propose_edit(
             path,
             old_text,
@@ -275,21 +323,23 @@ class InteractiveAssistant:
             apply=False,
         )
         if not proposal.ok:
-            marker = _marker(proposal.ok)
-            self._emit(f"{marker} PROPOSED EDIT {proposal.summary}")
+            self._emit(f"Proposed edit: {path}")
+            self._emit(f"Status: {_tool_status(proposal.ok)} {proposal.summary}")
             self.session.record_action("fix", proposal.summary)
             return
 
         edit_path = str(proposal.output.get("path", path))
         risk_level = str(proposal.output.get("risk_level", "unknown") or "unknown")
         mini_diff = str(proposal.output.get("mini_diff", _mini_diff(old_text, new_text)))
-        self._emit(f"[PROPOSED EDIT] {edit_path}")
+        self._emit("")
+        self._emit(f"Proposed edit: {edit_path}")
         self._emit(f"Risk: {risk_level}")
         self._emit("Status: reviewed, not applied")
+        self._emit("")
         self._emit("Diff:")
-        for line in mini_diff.splitlines():
-            self._emit(f"  {line}")
-        self._emit("Next: /apply to apply, reject to discard.")
+        self._emit_diff_block(mini_diff)
+        self._emit("")
+        self._emit("Next: type `/apply` to apply, or `reject` to discard.")
 
         self.session.pending_edit = PendingEdit(
             path=str(proposal.output.get("path", path)),
@@ -300,15 +350,17 @@ class InteractiveAssistant:
             risk_level=str(proposal.output.get("risk_level", "")) or None,
             reviewer_summary=str(proposal.output.get("reviewer_summary", "")) or None,
         )
+        self._emit_state()
         self.session.record_action("fix", f"Pending edit for {path}.")
 
     def _handle_apply(self) -> None:
         pending = self.session.pending_edit
         if pending is None:
-            self._emit("[FAIL] APPLY No pending edit. Use `fix` first.")
+            self._emit_main("No pending edit. Use `fix` first.")
             self.session.record_action("apply", "No pending edit.")
             return
 
+        self._emit_main("Applying pending edit...")
         edit = partial_edit(
             pending.path,
             pending.old_text,
@@ -317,15 +369,19 @@ class InteractiveAssistant:
             project_root=self.project_root,
             config=self.app_config,
         )
-        marker = _marker(edit.ok)
         if not edit.ok:
-            self._emit(f"{marker} APPLY {edit.summary}")
+            self._emit_tool("PARTIAL_EDIT", edit.ok, edit.summary)
             self.session.record_action("apply", edit.summary)
             return
 
-        self._emit(f"{marker} APPLY Updated {pending.path} via partial_edit.")
-        if edit.summary:
-            self._emit(f"   {edit.summary}")
+        self._emit_tool("PARTIAL_EDIT", edit.ok, f"Updated {pending.path}")
+        self._emit("")
+        self._emit("Applied:")
+        self._emit(f"- Replaced `{pending.old_text}`")
+        self._emit(f"- With `{pending.new_text}`")
+        self._emit("")
+        self._emit("Reason:")
+        self._emit(pending.reason)
 
         if pending.path == self.session.current_file_path:
             refreshed = read_file(
@@ -337,36 +393,36 @@ class InteractiveAssistant:
                 self.session.current_file_content = str(refreshed.output.get("content", ""))
 
         self.session.pending_edit = None
+        self._emit_state()
         self.session.record_action("apply", f"Applied edit to {pending.path}.")
 
     def _handle_reject(self) -> None:
         if self.session.pending_edit is None:
-            self._emit("[STEP] REJECT No pending edit to clear.")
+            self._emit_main("No pending edit to clear.")
             self.session.record_action("reject", "No pending edit.")
             return
 
         path = self.session.pending_edit.path
         self.session.pending_edit = None
-        self._emit(f"[OK] REJECT Cleared pending edit for {path}. No files were changed.")
+        self._emit_main(f"Cleared pending edit for {path}. No files were changed.")
+        self._emit_state()
         self.session.record_action("reject", f"Cleared pending edit for {path}.")
 
     def _handle_tokens(self) -> None:
         status = self.budget_monitor.status()
         max_tokens = self.app_config.token_budget.max_tokens
         pct = status.percentage_used * 100
-        self._emit("[TOKENS]")
-        self._emit(
-            f"Used: {status.total_tokens_used} / {max_tokens} tokens ({pct:.1f}%)"
-        )
-        self._emit(
-            f"Input/output: {status.input_tokens_used} / {status.output_tokens_used}"
-        )
-        self._emit(f"Estimated cost: ${status.estimated_cost_usd:.6f}")
+        token_lines = [
+            f"Used: {status.total_tokens_used} / {max_tokens} tokens ({pct:.1f}%)",
+            f"Input/output: {status.input_tokens_used} / {status.output_tokens_used}",
+            f"Estimated cost: ${status.estimated_cost_usd:.6f}",
+            "Mode: deterministic local estimate",
+        ]
         if status.warning_reached:
-            self._emit("Warning: budget threshold reached.")
+            token_lines.append("Warning: budget threshold reached.")
         if status.message:
-            self._emit(f"Note: {status.message}")
-        self._emit("Mode: deterministic local estimate")
+            token_lines.append(f"Note: {status.message}")
+        self._emit_tokens_block(*token_lines)
         self.session.record_action("tokens", f"{status.total_tokens_used} tokens used.")
 
     def _handle_compact_context(self, *, manual: bool) -> None:
@@ -396,32 +452,24 @@ class InteractiveAssistant:
 
         token_status = self.budget_monitor.status()
         trigger = "manual" if manual else "automatic"
-        self._emit(f"[OK] COMPACT Context compacted ({trigger}).")
-        self._emit("Preserved:")
-        if self.session.current_file_path:
-            self._emit(f"  current file: {self.session.current_file_path}")
-        else:
-            self._emit("  current file: (none)")
-        pending_summary = self.session.pending_edit_summary()
-        self._emit(f"  pending edit: {pending_summary or '(none)'}")
-        if self.session.last_review_summary:
-            review_line = compact_output(
-                self.session.last_review_summary.splitlines()[0],
-                config=self.app_config,
-                max_chars=120,
-            ).text
-            self._emit(f"  last review: {review_line}")
-        else:
-            self._emit("  last review: (none)")
-        if self.session.last_test_result:
-            self._emit(f"  last test: {self.session.last_test_result}")
-        else:
-            self._emit("  last test: (none)")
-        self._emit(f"  tokens used: {token_status.total_tokens_used}")
-        self._emit(
-            f"History: kept {len(self.session.action_history)} actions "
-            f"(was {before_count}, {before_chars} chars)"
-        )
+        label = "session history" if manual else f"session history ({trigger})"
+        context_lines = [
+            f"Compacted {label}.",
+            "",
+            "Preserved:",
+            "- current file",
+            "- pending edit state",
+            "- last review",
+            "- last test result",
+            "- token usage",
+            "",
+            (
+                f"History: kept {len(self.session.action_history)} actions "
+                f"(was {before_count}, {before_chars} chars); "
+                f"tokens used: {token_status.total_tokens_used}"
+            ),
+        ]
+        self._emit_context_block(*context_lines)
 
     def _maybe_auto_compact(self) -> None:
         if self.session.history_char_count >= self.compaction_threshold:
@@ -462,6 +510,57 @@ class InteractiveAssistant:
             TokenUsage(input_tokens=input_tokens, output_tokens=output_tokens)
         )
 
+    def _begin_turn(self, user_line: str) -> None:
+        self._emit("")
+        for line in _user_box_lines(user_line):
+            self._emit(line)
+
+    def _emit_main(self, *lines: str) -> None:
+        for line in lines:
+            self._emit(f"[MAIN] {line}")
+
+    def _emit_tool(self, tool_name: str, ok: bool, message: str) -> None:
+        self._emit(f"[TOOL: {tool_name}] {_tool_status(ok)} {message}")
+
+    def _emit_safety(self, *lines: str) -> None:
+        if not lines:
+            return
+        self._emit(f"[SAFETY] ! {lines[0]}")
+        for line in lines[1:]:
+            self._emit(line)
+
+    def _emit_tokens_block(self, *lines: str) -> None:
+        self._emit("[TOKENS]")
+        for line in lines:
+            self._emit(line)
+
+    def _emit_context_block(self, *lines: str) -> None:
+        self._emit("[CONTEXT]")
+        for line in lines:
+            self._emit(line)
+
+    def _emit_agent_line(self, role: str, text: str) -> None:
+        self._emit(f"[{role}] {text}")
+
+    def _emit_numbered_preview(self, content: str, *, max_lines: int = 12) -> None:
+        self._emit(_LINE_SEP)
+        for line in _numbered_preview_lines(content, max_lines=max_lines):
+            self._emit(line)
+        self._emit(_LINE_SEP)
+
+    def _emit_diff_block(self, mini_diff: str) -> None:
+        self._emit(_LINE_SEP)
+        for line in mini_diff.splitlines():
+            indented = line
+            if line.startswith("-") or line.startswith("+"):
+                indented = f"    {line}"
+            self._emit(indented)
+        self._emit(_LINE_SEP)
+
+    def _emit_state(self) -> None:
+        self._emit("")
+        self._emit(_format_state_line(self.session))
+
     def _emit(self, text: str) -> None:
         self.output_fn(text)
 
@@ -499,8 +598,42 @@ def run_interactive(
     return assistant.run_loop()
 
 
-def _marker(ok: bool) -> str:
-    return "[OK]" if ok else "[FAIL]"
+def _tool_status(ok: bool) -> str:
+    return "✓" if ok else "✗"
+
+
+def _format_state_line(session: InteractiveSession) -> str:
+    if session.current_file_path:
+        file_label = Path(session.current_file_path).name
+    else:
+        file_label = "(none)"
+    pending = "yes" if session.pending_edit is not None else "no"
+    if session.last_test_passed is None:
+        tests = "not run"
+    elif session.last_test_passed:
+        tests = "passed"
+    else:
+        tests = "failed"
+    return f"State: file={file_label} | pending_edit={pending} | tests={tests}"
+
+
+def _user_box_lines(user_line: str) -> list[str]:
+    header = "╭─ User "
+    top = header + "─" * (_BOX_WIDTH - len(header))
+    bottom = "╰" + "─" * (_BOX_WIDTH - 1)
+    return [top, f"│ {user_line}", bottom]
+
+
+def _numbered_preview_lines(content: str, *, max_lines: int = 12) -> list[str]:
+    if not content:
+        return ["(empty)"]
+    lines = content.splitlines()
+    preview = lines[:max_lines]
+    width = len(str(len(lines) if lines else 1))
+    numbered = [f"{index:>{width}}  {line}" for index, line in enumerate(preview, start=1)]
+    if len(lines) > max_lines:
+        numbered.append("...")
+    return numbered
 
 
 def _mini_diff(old_line: str, new_line: str) -> str:

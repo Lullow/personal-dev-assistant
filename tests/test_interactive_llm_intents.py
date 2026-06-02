@@ -210,7 +210,7 @@ def test_assistant_without_llm_intents_unchanged_for_fix_it(tmp_path):
     assistant.handle(ParsedCommand(name="read", arg="demo_project/calculator.py"))
     assert assistant.handle(parse_command("fix it")) is True
     assert assistant.session.pending_edit is not None
-    assert "PROPOSED EDIT" in output.getvalue()
+    assert "Proposed edit:" in output.getvalue()
 
 
 def test_assistant_with_llm_intents_routes_ambiguous_fix_phrase(tmp_path):
@@ -234,7 +234,7 @@ def test_assistant_with_llm_intents_routes_ambiguous_fix_phrase(tmp_path):
     assistant.handle(command)
 
     assert assistant.session.pending_edit is not None
-    assert "PROPOSED EDIT" in output.getvalue()
+    assert "Proposed edit:" in output.getvalue()
 
 
 def test_assistant_with_llm_intents_unknown_shows_safe_message(tmp_path):

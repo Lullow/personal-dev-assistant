@@ -35,6 +35,7 @@ class InteractiveSession:
     last_review_summary: str | None = None
     pending_edit: PendingEdit | None = None
     last_test_result: str | None = None
+    last_test_passed: bool | None = None
     context_summary: str = ""
     action_history: list[ActionRecord] = field(default_factory=list)
 

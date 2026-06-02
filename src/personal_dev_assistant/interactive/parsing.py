@@ -38,10 +38,9 @@ Natural phrases also work (deterministic parsing, not LLM):
   compact context, compact history
 """.strip()
 
-WELCOME_TITLE = "Personal Dev Assistant — Interactive v.2.1"
-WELCOME_NOTE = (
-    "Demo flow: open → review → fix → /apply → run tests. Type help for commands."
-)
+WELCOME_TITLE = "Personal Dev Assistant — Interactive v2.1"
+WELCOME_NOTE = "Flow: open → review → fix → /apply → run tests"
+WELCOME_HELP_HINT = "Type `help` for commands."
 READY_MESSAGE = ""
 
 # Longest prefixes first so "please can you" wins over "please".

@@ -12,6 +12,7 @@ from personal_dev_assistant.interactive import (
     InteractiveAssistant,
     InteractiveSession,
     ParsedCommand,
+    PendingEdit,
     WELCOME_NOTE,
     WELCOME_TITLE,
     parse_command,
@@ -178,10 +179,10 @@ def test_welcome_messages_mention_help():
 
     assert WELCOME_TITLE in text
     assert WELCOME_NOTE in text
+    assert "Type `help` for commands" in text
     if READY_MESSAGE:
         assert READY_MESSAGE in text
     assert "/apply" in text
-    assert "help" in text.lower()
 
 
 def test_handle_help_prints_commands():
@@ -201,6 +202,46 @@ def test_help_text_mentions_natural_commands():
     assert "open <path>" in HELP_TEXT
     assert "run tests" in HELP_TEXT
     assert "fix it" in HELP_TEXT
+
+
+def test_input_prompt_reflects_session_state(tmp_path):
+    assistant = _assistant(tmp_path)
+    assert assistant.input_prompt() == "pda > "
+
+    assistant.session.current_file_path = CALCULATOR_PATH
+    assert assistant.input_prompt() == "calculator.py > "
+
+    assistant.session.pending_edit = PendingEdit(
+        path=CALCULATOR_PATH,
+        old_text=BUGGY_RETURN,
+        new_text=FIXED_RETURN,
+        reason="demo",
+        mini_diff=f"- {BUGGY_RETURN}\n+ {FIXED_RETURN}",
+    )
+    assert assistant.input_prompt() == "calculator.py [pending edit] > "
+
+
+def test_user_block_rendered_when_command_handled(tmp_path):
+    _write_demo_project(tmp_path, calculator_source=BUGGY_CALCULATOR)
+    output = StringIO()
+    assistant = _assistant(tmp_path, output=output)
+    assistant._begin_turn("list")
+    assistant.handle(ParsedCommand(name="list"))
+    text = output.getvalue()
+    assert "╭─ User" in text
+    assert "│ list" in text
+    assert "╰" in text
+
+
+def test_open_output_includes_read_file_tool_and_numbered_preview(tmp_path):
+    _write_demo_project(tmp_path, calculator_source=BUGGY_CALCULATOR)
+    output = StringIO()
+    assistant = _assistant(tmp_path, output=output)
+    assistant.handle(ParsedCommand(name="read", arg=CALCULATOR_PATH))
+    text = output.getvalue()
+    assert "[TOOL: READ_FILE]" in text
+    assert "1  def add" in text
+    assert "pending_edit=no" in text
 
 
 def test_handle_exit_returns_false():
@@ -229,7 +270,9 @@ def test_show_current_file_displays_path_and_content(tmp_path):
     assistant.handle(ParsedCommand(name="current"))
     text = output.getvalue()
 
-    assert "CURRENT FILE" in text
+    assert "[MAIN]" in text
+    assert "Current file:" in text
+    assert "1  def" in text
     assert CALCULATOR_PATH in text
     assert BUGGY_RETURN in text
 
@@ -243,12 +286,13 @@ def test_review_current_file_reports_add_subtract_bug(tmp_path):
     assistant.handle(parse_command("can you review it"))
     text = output.getvalue()
 
-    assert "[REVIEW]" in text
-    assert "code reviewer:" in text
-    assert "test agent:" in text
-    assert "fix planner:" in text
+    assert "[MAIN]" in text
+    assert "[CODE REVIEWER]" in text
+    assert "[TEST AGENT]" in text
+    assert "[FIX PLANNER]" in text
+    assert "Agent notes:" in text
     assert "subtract" in text.lower()
-    assert FIXED_RETURN in text
+    assert "State:" in text
     assert assistant.session.last_review_summary is not None
 
 
@@ -268,15 +312,29 @@ def test_fix_creates_pending_edit_without_modifying_file(tmp_path):
     assistant.handle(parse_command("fix it"))
     text = output.getvalue()
 
-    assert "[PROPOSED EDIT]" in text
+    assert "Proposed edit:" in text
     assert "Diff:" in text
     assert "Risk:" in text
+    assert "reviewed, not applied" in text
     assert "/apply" in text
+    assert "State:" in text
     assert assistant.session.pending_edit is not None
     assert assistant.session.pending_edit.path == CALCULATOR_PATH
     calculator_text = (tmp_path / CALCULATOR_PATH).read_text(encoding="utf-8")
     assert BUGGY_RETURN in calculator_text
     assert FIXED_RETURN not in calculator_text
+
+
+def test_slash_apply_uses_partial_edit_tool_label(tmp_path):
+    _write_demo_project(tmp_path, calculator_source=BUGGY_CALCULATOR)
+    output = StringIO()
+    assistant = _assistant(tmp_path, output=output)
+
+    assistant.handle(ParsedCommand(name="read", arg=CALCULATOR_PATH))
+    assistant.handle(ParsedCommand(name="fix"))
+    assistant.handle(parse_command("/apply"))
+    assert "[TOOL: PARTIAL_EDIT]" in output.getvalue()
+    assert "Applied:" in output.getvalue()
 
 
 def test_slash_apply_through_parse_command_modifies_file_after_pending_edit(tmp_path):
@@ -308,7 +366,9 @@ def test_apply_without_slash_does_not_modify_file_and_shows_hint(tmp_path):
     assert BUGGY_RETURN in calculator_text
     assert FIXED_RETURN not in calculator_text
     assert assistant.session.pending_edit is not None
-    assert "requires explicit /apply" in output.getvalue()
+    text = output.getvalue()
+    assert "[SAFETY]" in text
+    assert "Edits require explicit `/apply`" in text
 
 
 def test_reject_clears_pending_edit_without_modifying_file(tmp_path):
@@ -330,7 +390,7 @@ def test_handle_list_uses_safe_tool(tmp_path):
     assistant = _assistant(tmp_path, output=output)
 
     assert assistant.handle(ParsedCommand(name="list")) is True
-    assert "[OK] LIST" in output.getvalue()
+    assert "[TOOL: LIST_PROJECT_FILES]" in output.getvalue()
 
 
 def test_handle_test_runs_pytest_demo_project(tmp_path):
@@ -340,8 +400,11 @@ def test_handle_test_runs_pytest_demo_project(tmp_path):
 
     assistant.handle(ParsedCommand(name="test"))
     text = output.getvalue()
-    assert "TEST" in text
+    assert "[TOOL: BASH]" in text
+    assert "Test result:" in text
     assert assistant.session.last_test_result is not None
+    assert assistant.session.last_test_passed is not None
+    assert "tests=failed" in text or "tests=passed" in text
 
 
 def test_handle_tokens_shows_budget_status(tmp_path):
@@ -357,6 +420,19 @@ def test_handle_tokens_shows_budget_status(tmp_path):
     assert "Used:" in text
     assert "Input/output:" in text
     assert "Mode: deterministic local estimate" in text
+
+
+def test_compact_context_shows_context_label(tmp_path):
+    _write_demo_project(tmp_path, calculator_source=BUGGY_CALCULATOR)
+    output = StringIO()
+    assistant = _assistant(tmp_path, output=output)
+
+    assistant.handle(ParsedCommand(name="read", arg=CALCULATOR_PATH))
+    assistant.handle(ParsedCommand(name="fix"))
+    assistant.handle(ParsedCommand(name="compact"))
+    assert "[CONTEXT]" in output.getvalue()
+    assert "Preserved:" in output.getvalue()
+    assert "- current file" in output.getvalue()
 
 
 def test_compact_context_preserves_current_file_and_pending_edit(tmp_path):
@@ -383,7 +459,8 @@ def test_auto_compaction_triggers_when_history_grows(tmp_path):
         assistant.handle(ParsedCommand(name="list"))
         assistant.finalize_command()
 
-    assert "COMPACT Context compacted (automatic)" in output.getvalue()
+    assert "[CONTEXT]" in output.getvalue()
+    assert "automatic" in output.getvalue()
 
 
 def test_handle_natural_list_phrase(tmp_path):
@@ -392,7 +469,7 @@ def test_handle_natural_list_phrase(tmp_path):
     assistant = _assistant(tmp_path, output=output)
 
     assert assistant.handle(parse_command("show files")) is True
-    assert "[OK] LIST" in output.getvalue()
+    assert "[TOOL: LIST_PROJECT_FILES]" in output.getvalue()
 
 
 def test_run_interactive_exits_on_quit(tmp_path):
