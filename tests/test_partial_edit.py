@@ -1,5 +1,11 @@
 from __future__ import annotations
 
+import importlib.util
+import py_compile
+import subprocess
+import sys
+from pathlib import Path
+
 from personal_dev_assistant.config import AppConfig, SafetyConfig
 from personal_dev_assistant.tools import partial_edit
 
@@ -172,3 +178,59 @@ def test_file_edits_disabled_in_config(tmp_path):
     assert result.ok is False
     assert result.output["reason"] == "file edits disabled"
     assert file_path.read_text(encoding="utf-8") == "old\n"
+
+
+def test_partial_edit_invalidates_stale_bytecode_for_same_size_replacement(tmp_path):
+    """Pytest must see updated source immediately after a same-length partial_edit."""
+
+    demo_dir = tmp_path / "demo_project"
+    demo_dir.mkdir(parents=True)
+    calculator = demo_dir / "calculator.py"
+    test_file = demo_dir / "test_calculator.py"
+    calculator.write_text("def add(a, b):\n    return a - b\n", encoding="utf-8")
+    test_file.write_text(
+        "from calculator import add\n\n\n"
+        "def test_add_returns_sum():\n"
+        "    assert add(2, 3) == 5\n",
+        encoding="utf-8",
+    )
+
+    python = sys.executable
+    pytest_args = [python, "-m", "pytest", "demo_project/test_calculator.py", "-q"]
+
+    before = subprocess.run(
+        pytest_args,
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert before.returncode != 0
+
+    cache_path = importlib.util.cache_from_source(str(calculator.resolve()))
+    assert cache_path
+    if not Path(cache_path).exists():
+        py_compile.compile(str(calculator), doraise=True)
+    assert Path(cache_path).exists()
+
+    result = partial_edit(
+        "demo_project/calculator.py",
+        "return a - b",
+        "return a + b",
+        reason="Fix addition bug.",
+        project_root=tmp_path,
+    )
+    assert result.ok is True
+    assert len(calculator.read_text(encoding="utf-8")) == len(
+        "def add(a, b):\n    return a + b\n"
+    )
+    assert not Path(cache_path).exists()
+
+    after = subprocess.run(
+        pytest_args,
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert after.returncode == 0, after.stdout + after.stderr

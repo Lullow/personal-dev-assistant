@@ -8,7 +8,8 @@ from typing import Callable
 from personal_dev_assistant.budget import TokenBudgetMonitor
 from personal_dev_assistant.config import AppConfig, RuntimeConfig
 from personal_dev_assistant.context.compaction import compact_output
-from personal_dev_assistant.demo.runner import BUGGY_RETURN, CALCULATOR_PATH, DEMO_PROJECT_DIR, FIXED_RETURN
+from personal_dev_assistant.demo.runner import CALCULATOR_PATH, DEMO_PROJECT_DIR
+from personal_dev_assistant.interactive.bug_patterns import find_matching_bug_pattern
 from personal_dev_assistant.interactive.intents import IntentClassifier
 from personal_dev_assistant.interactive.parsing import (
     HELP_TEXT,
@@ -248,6 +249,7 @@ class InteractiveAssistant:
             return
 
         combined = review_current_file(path=path, content=content)
+        pattern = find_matching_bug_pattern(path, content)
         self.session.last_review_summary = combined.summary
 
         self._emit_main(f"Reviewing {path} with subagents...")
@@ -259,7 +261,7 @@ class InteractiveAssistant:
         self._record_agent_tokens("test_agent", input_tokens=50, output_tokens=25)
         fix_hint = (
             "Create a proposed edit with `fix it`, then apply with `/apply`."
-            if BUGGY_RETURN in content
+            if pattern is not None
             else combined.fix_planner.recommendation
         )
         self._emit_agent_line("FIX PLANNER", fix_hint)
@@ -267,10 +269,10 @@ class InteractiveAssistant:
 
         self._emit("")
         self._emit("Summary:")
-        if BUGGY_RETURN in content:
-            self._emit("- Bug found in `add()`")
-            self._emit("- Current code subtracts instead of adding")
-            self._emit("- Suggested fix is low risk")
+        if pattern is not None:
+            self._emit(f"- {pattern.summary}")
+            self._emit(f"- {pattern.test_hint}")
+            self._emit(f"- Suggested fix is {pattern.risk_level} risk")
             self._emit("")
             self._emit("Next: type `fix it`")
         else:
@@ -305,9 +307,12 @@ class InteractiveAssistant:
             self.session.record_action("fix", "No current file.")
             return
 
-        suggestion = suggest_fix_for_content(content)
+        suggestion = suggest_fix_for_content(path, content)
         if suggestion is None:
-            self._emit_main("No automatic fix available for the current file.")
+            self._emit_main(
+                "No known deterministic fix pattern found for this file.",
+                "Try manual inspection or experimental run-agent --llm.",
+            )
             self.session.record_action("fix", f"No fix suggestion for {path}.")
             return
 

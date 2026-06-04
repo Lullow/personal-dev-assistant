@@ -22,6 +22,24 @@ from personal_dev_assistant.interactive import (
 from personal_dev_assistant.interactive.assistant import DEFAULT_COMPACTION_THRESHOLD
 
 BUGGY_CALCULATOR = "def add(a, b):\n    return a - b\n"
+BUGGY_STRING_UTILS = "def normalize_name(name):\n    return name.lower()\n"
+BUGGY_STATS_UTILS = "def average(numbers):\n    return sum(numbers) // len(numbers)\n"
+FIXED_STRING_UTILS = "def normalize_name(name):\n    return name.strip().title()\n"
+FIXED_STATS_UTILS = "def average(numbers):\n    return sum(numbers) / len(numbers)\n"
+from personal_dev_assistant.interactive.bug_patterns import STATS_UTILS_PATH, STRING_UTILS_PATH
+
+STRING_UTILS_TEST_FILE = """from demo_challenges.string_utils import normalize_name
+
+
+def test_normalize_name_strips_spaces_and_title_cases():
+    assert normalize_name("  eLIA  ") == "Elia"
+"""
+STATS_UTILS_TEST_FILE = """from demo_challenges.stats_utils import average
+
+
+def test_average_returns_decimal_value():
+    assert average([1, 2]) == 1.5
+"""
 TEST_FILE = """from calculator import add
 
 
@@ -35,6 +53,31 @@ def _write_demo_project(root: Path, *, calculator_source: str) -> None:
     demo_dir.mkdir(parents=True, exist_ok=True)
     (demo_dir / "calculator.py").write_text(calculator_source, encoding="utf-8")
     (demo_dir / "test_calculator.py").write_text(TEST_FILE, encoding="utf-8")
+
+
+def _write_demo_challenges(
+    root: Path,
+    *,
+    string_utils_source: str | None = None,
+    stats_utils_source: str | None = None,
+) -> None:
+    challenges_dir = root / "demo_challenges"
+    challenges_dir.mkdir(parents=True, exist_ok=True)
+    (challenges_dir / "__init__.py").write_text("", encoding="utf-8")
+    if string_utils_source is not None:
+        (challenges_dir / "string_utils.py").write_text(
+            string_utils_source, encoding="utf-8"
+        )
+        (challenges_dir / "test_string_utils.py").write_text(
+            STRING_UTILS_TEST_FILE, encoding="utf-8"
+        )
+    if stats_utils_source is not None:
+        (challenges_dir / "stats_utils.py").write_text(
+            stats_utils_source, encoding="utf-8"
+        )
+        (challenges_dir / "test_stats_utils.py").write_text(
+            STATS_UTILS_TEST_FILE, encoding="utf-8"
+        )
 
 
 def _assistant(
@@ -500,3 +543,147 @@ def test_run_interactive_exits_on_eof(tmp_path):
     )
 
     assert exit_code == 0
+
+
+def test_string_utils_review_detects_bug(tmp_path):
+    _write_demo_project(tmp_path, calculator_source=BUGGY_CALCULATOR)
+    _write_demo_challenges(tmp_path, string_utils_source=BUGGY_STRING_UTILS)
+    output = StringIO()
+    assistant = _assistant(tmp_path, output=output)
+
+    assistant.handle(ParsedCommand(name="read", arg=STRING_UTILS_PATH))
+    assistant.handle(parse_command("review it"))
+    text = output.getvalue()
+
+    assert "lowercase" in text.lower()
+    assert "[CODE REVIEWER]" in text
+    assert "Suggested fix is low risk" in text
+
+
+def test_string_utils_fix_and_apply(tmp_path):
+    _write_demo_project(tmp_path, calculator_source=BUGGY_CALCULATOR)
+    _write_demo_challenges(tmp_path, string_utils_source=BUGGY_STRING_UTILS)
+    assistant = _assistant(tmp_path)
+
+    assistant.handle(ParsedCommand(name="read", arg=STRING_UTILS_PATH))
+    assistant.handle(ParsedCommand(name="fix"))
+    assert assistant.session.pending_edit is not None
+    assert assistant.session.pending_edit.old_text == "return name.lower()"
+    assistant.handle(parse_command("/apply"))
+
+    content = (tmp_path / STRING_UTILS_PATH).read_text(encoding="utf-8")
+    assert "return name.strip().title()" in content
+    assert "return name.lower()" not in content
+
+
+def test_stats_utils_review_and_fix(tmp_path):
+    _write_demo_project(tmp_path, calculator_source=BUGGY_CALCULATOR)
+    _write_demo_challenges(tmp_path, stats_utils_source=BUGGY_STATS_UTILS)
+    output = StringIO()
+    assistant = _assistant(tmp_path, output=output)
+
+    assistant.handle(ParsedCommand(name="read", arg=STATS_UTILS_PATH))
+    assistant.handle(parse_command("review it"))
+    text = output.getvalue()
+    assert "integer division" in text.lower()
+
+    assistant.handle(ParsedCommand(name="fix"))
+    assert assistant.session.pending_edit is not None
+    assert assistant.session.pending_edit.old_text == "return sum(numbers) // len(numbers)"
+    assistant.handle(parse_command("/apply"))
+
+    content = (tmp_path / STATS_UTILS_PATH).read_text(encoding="utf-8")
+    assert "return sum(numbers) / len(numbers)" in content
+
+
+def test_unknown_file_does_not_create_unsafe_edit(tmp_path):
+    unknown_path = "demo_project/custom.py"
+    (tmp_path / "demo_project").mkdir(parents=True, exist_ok=True)
+    (tmp_path / unknown_path).write_text("def custom():\n    return 1\n", encoding="utf-8")
+    output = StringIO()
+    assistant = _assistant(tmp_path, output=output)
+
+    assistant.handle(ParsedCommand(name="read", arg=unknown_path))
+    assistant.handle(ParsedCommand(name="fix"))
+    text = output.getvalue()
+
+    assert "No known deterministic fix pattern found" in text
+    assert assistant.session.pending_edit is None
+
+
+def test_demo_project_pytest_fails_before_fix_and_passes_after_calculator_fix(tmp_path):
+    _write_demo_project(tmp_path, calculator_source=BUGGY_CALCULATOR)
+    _write_demo_challenges(
+        tmp_path,
+        string_utils_source=BUGGY_STRING_UTILS,
+        stats_utils_source=BUGGY_STATS_UTILS,
+    )
+    from personal_dev_assistant.tools import bash
+
+    before = bash("pytest demo_project", project_root=tmp_path)
+    assert before.ok is False
+
+    assistant = _assistant(tmp_path)
+    assistant.handle(ParsedCommand(name="read", arg=CALCULATOR_PATH))
+    assistant.handle(ParsedCommand(name="fix"))
+    assistant.handle(parse_command("/apply"))
+
+    after = bash("pytest demo_project", project_root=tmp_path)
+    assert after.ok is True
+
+
+def test_demo_project_pytest_unaffected_by_demo_challenges_bugs(tmp_path):
+    """pytest demo_project only runs calculator tests, not challenge failures."""
+    _write_demo_project(tmp_path, calculator_source=BUGGY_CALCULATOR.replace(BUGGY_RETURN, FIXED_RETURN))
+    _write_demo_challenges(
+        tmp_path,
+        string_utils_source=BUGGY_STRING_UTILS,
+        stats_utils_source=BUGGY_STATS_UTILS,
+    )
+    from personal_dev_assistant.tools import bash
+
+    demo_result = bash("pytest demo_project", project_root=tmp_path)
+    assert demo_result.ok is True
+
+    challenges_result = bash("pytest demo_challenges", project_root=tmp_path)
+    assert challenges_result.ok is False
+
+
+def test_demo_challenges_pytest_passes_after_string_utils_fix(tmp_path):
+    _write_demo_project(
+        tmp_path,
+        calculator_source=BUGGY_CALCULATOR.replace(BUGGY_RETURN, FIXED_RETURN),
+    )
+    _write_demo_challenges(tmp_path, string_utils_source=BUGGY_STRING_UTILS)
+    from personal_dev_assistant.tools import bash
+
+    before = bash("pytest demo_challenges/test_string_utils.py", project_root=tmp_path)
+    assert before.ok is False
+
+    assistant = _assistant(tmp_path)
+    assistant.handle(ParsedCommand(name="read", arg=STRING_UTILS_PATH))
+    assistant.handle(ParsedCommand(name="fix"))
+    assistant.handle(parse_command("/apply"))
+
+    after = bash("pytest demo_challenges/test_string_utils.py", project_root=tmp_path)
+    assert after.ok is True
+
+
+def test_demo_challenges_pytest_passes_after_stats_utils_fix(tmp_path):
+    _write_demo_project(
+        tmp_path,
+        calculator_source=BUGGY_CALCULATOR.replace(BUGGY_RETURN, FIXED_RETURN),
+    )
+    _write_demo_challenges(tmp_path, stats_utils_source=BUGGY_STATS_UTILS)
+    from personal_dev_assistant.tools import bash
+
+    before = bash("pytest demo_challenges/test_stats_utils.py", project_root=tmp_path)
+    assert before.ok is False
+
+    assistant = _assistant(tmp_path)
+    assistant.handle(ParsedCommand(name="read", arg=STATS_UTILS_PATH))
+    assistant.handle(ParsedCommand(name="fix"))
+    assistant.handle(parse_command("/apply"))
+
+    after = bash("pytest demo_challenges/test_stats_utils.py", project_root=tmp_path)
+    assert after.ok is True

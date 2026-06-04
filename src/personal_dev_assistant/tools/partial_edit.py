@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import importlib
+import importlib.util
+import os
 from pathlib import Path
 
 from personal_dev_assistant.config import AppConfig
@@ -145,6 +148,7 @@ def partial_edit(
     content = target.read_text(encoding="utf-8")
     updated_content = content.replace(old_text, new_text, 1)
     target.write_text(updated_content, encoding="utf-8")
+    _invalidate_python_bytecode_after_write(target)
 
     summary = f"Updated `{relative_path}` with a single focused replacement."
     if reason.strip():
@@ -159,6 +163,33 @@ def partial_edit(
             "reason": reason.strip() or None,
         },
     )
+
+
+def _invalidate_python_bytecode_after_write(target: Path) -> None:
+    """Remove stale bytecode so imports immediately see the updated source."""
+
+    if target.suffix != ".py":
+        return
+
+    importlib.invalidate_caches()
+
+    try:
+        os.utime(target, None)
+    except OSError:
+        pass
+
+    try:
+        cache_path = importlib.util.cache_from_source(str(target.resolve()))
+    except (TypeError, ValueError):
+        return
+
+    if not cache_path:
+        return
+
+    try:
+        Path(cache_path).unlink(missing_ok=True)
+    except OSError:
+        pass
 
 
 def _rejected(*, path: str, summary: str, reason: str) -> ToolResult:
